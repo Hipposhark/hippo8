@@ -106,7 +106,7 @@ datasheet links
 #define _ALU_BUS (_AZ0 | _AZS)          // load data bus into reg. E (_RFW is inactive)
 #define _ALU_LSL (_AZ1 | _AZS)          // load left-shifted data bus into reg. E
 #define _ALU_LSR (_AZ0 | _AZ1 | _AZS)   // load right-shifted data bus into reg. E
-#define _ALU_CMP (| _AZ1 | _AZ2 | _AZS) // compare data bus to reg. E and load results into reg. F (if _RFW is active and _REW is inactive)
+#define _ALU_CMP (_AZ1 | _AZ2 | _AZS)   // compare data bus to reg. E and load results into reg. F (if _RFW is active and _REW is inactive)
 
 // ALU's flag manipulation related control lines (if _RFW is active)
 #define _FLG_BUS (_AZ0 | _AZS)        // load data bus into reg. F
@@ -436,13 +436,13 @@ void write_label_unconditional(boolean is_an_opcode, int curr_label_number, int 
 
 void print_curr_instruction(char* curr_instruction_name, int curr_instruction_opcode) {
   char buffer[60];
-  if        (strstr(curr_instruction_name, ",#") != NULL) {                           // immediate data operand
+  if        (strstr(curr_instruction_name, ",#") != NULL) {                           // immediate data (1 byte) operand
     sprintf(buffer, "%s{val}\t=> 0x%02x @ val[7:0]", curr_instruction_name, curr_instruction_opcode);
-  } else if (strstr(curr_instruction_name, "address") != NULL) {                      // address operand
+  } else if (strstr(curr_instruction_name, "address") != NULL) {                      // address (2 bytes) operand
     sprintf(buffer, "%s\t=> 0x%02x @ val[7:0] @ val[15:8]", curr_instruction_name, curr_instruction_opcode);
-    char* s = strstr(buffer, "address");                                                // reformatting output string
+    char* s = strstr(buffer, "address");                                              // reformatting output string
     s[0] = ' ';
-    s[1] = '{}';
+    s[1] = '{';
     s[2] = 'a';
     s[3] = 'd';
     s[4] = 'd';
@@ -536,8 +536,9 @@ void setup()
 
 
 
-  /* unconditional microcode */
-  /* simple instructions */
+  /*||===========================||*/
+  /*|| simple unconditional shit ||*/
+  /*||===========================||*/
 
   // NOP - No Operation
   int nop_address = curr_mc_address;
@@ -597,77 +598,413 @@ void setup()
   write_microcode_byte(curr_mc_address++, _TRE | _PCW | _SPC); // transfer reg. to program counter
   write_microcode_byte(curr_mc_address++, _SPE | _MME | _FLG_BUS | _RFW | _CTI | _CIC);
 
-  // register-based instructions
+  
+  /*||==============================||*/
+  /*|| 2 operand unconditional shit ||*/
+  /*|| (MOV,ADD,SUB,AND,OR,XOR,CMP) ||*/
+  /*||==============================||*/
 
   int dest = 0; // destination index into the 'register arrays'
   int src  = 0; // source index into the 'register arrays'
 
+  // register addressing mode: retrieve the data from a specified register (4 * 3 * 7 = 84 instructions)
   while (dest < 4) {
     src = 0; // reset the source index
     while (src < 4) {
       if (src != dest) {
-        // MOV: [src] -> [dest]
+        // MOV: src -> dest
         sprintf(buffer, "MOV R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]); // ex: MOV RA,RB
         print_curr_instruction(buffer, curr_instruction_opcode);
         write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
         write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src] | GP_REG_WRITE[dest] | _CIC);
 
-        // ADD: [dest] + [src] -> [dest]
+        // ADD: dest + src -> dest
         sprintf(buffer, "ADD R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]);
         print_curr_instruction(buffer, curr_instruction_opcode);
         write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
         write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
-        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src]  | _ALU_ADD | _REW | _RFW)
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src]  | _ALU_ADD | _REW | _RFW);
         write_microcode_byte(curr_mc_address++, GP_REG_WRITE[dest] | _REE     | _CIC);
 
-        // SUB: [dest]
+        // SUB: dest - src -> dest
         sprintf(buffer, "SUB R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]);
         print_curr_instruction(buffer, curr_instruction_opcode);
         write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
         write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
-        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src]  | _ALU_SUB | _REW | _RFW)
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src]  | _ALU_SUB | _REW | _RFW);
         write_microcode_byte(curr_mc_address++, GP_REG_WRITE[dest] | _REE     | _CIC);
 
-        // AND:
+        // AND: dest & src -> dest
+        sprintf(buffer, "AND R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]);
+        print_curr_instruction(buffer, curr_instruction_opcode);
+        write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src]  | _ALU_AND | _REW | _RFW);
+        write_microcode_byte(curr_mc_address++, GP_REG_WRITE[dest] | _REE     | _CIC);
 
-        // OR:
+        // OR: dest | src -> dest
+        sprintf(buffer, "OR R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]);
+        print_curr_instruction(buffer, curr_instruction_opcode);
+        write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src]  | _ALU_OR  | _REW | _RFW);
+        write_microcode_byte(curr_mc_address++, GP_REG_WRITE[dest] | _REE     | _CIC);
 
-        // XOR:
+        // XOR: dest ^ src -> dest
+        sprintf(buffer, "XOR R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]);
+        print_curr_instruction(buffer, curr_instruction_opcode);
+        write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src]  | _ALU_XOR  | _REW | _RFW);
+        write_microcode_byte(curr_mc_address++, GP_REG_WRITE[dest] | _REE     | _CIC);
 
-        // CMP:
-
+        // CMP: dest > src -> F reg. = XX00 ; dest < src -> F reg. = XX10 ; dest = src -> F reg. = XX01 
+        sprintf(buffer, "CMP R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]);
+        print_curr_instruction(buffer, curr_instruction_opcode);
+        write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+        write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src]  | _ALU_CMP | _RFW | _CIC);
       }
       src++;
     }
     dest++;
   }
 
-  // immediate
-  dest = 0;
-
-  // absolute
-  dest = 0;
-
-  // indirect
-  dest = 0;
-
-  // OUT from a register
+  // immediate addressing mode: retrieve the data right after the opcode in memory (4 * 7 = 28 instructions)
   for (int dest = 0; dest < 4; dest++) {
+    // MOV: imm8 -> dest
+    sprintf(buffer, "MOV R%c,#", GP_REGISTERS[dest]); // ex: MOV RA,0xFF
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | GP_REG_WRITE[dest] | _PCC | _CIC); // NOTE: increment PC since we already incremented in fetch cycle
+    
+    // ADD: dest + imm8 -> dest
+    sprintf(buffer, "ADD R%c,#", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _ALU_ADD | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
 
+    // SUB: dest - imm8 -> dest
+    sprintf(buffer, "SUB R%c,#", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _ALU_SUB | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+
+    // AND: dest & imm8 -> dest
+    sprintf(buffer, "AND R%c,#", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _ALU_AND | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+
+    // OR: dest | imm8 -> dest
+    sprintf(buffer, "OR R%c,#", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _ALU_OR | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+
+    // XOR: dest ^ imm8 -> dest
+    sprintf(buffer, "XOR R%c,#", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _ALU_XOR | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+
+    // CMP: dest > imm8 -> F reg. = XX00 ; dest < imm8 -> F reg. = XX10 ; dest = imm8 -> F reg. = XX01
+    sprintf(buffer, "CMP R%c,#", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _ALU_CMP | _RFW | _PCC | _CIC);
   }
 
-  // OUT from a memory address
-  print_curr_instruction("OUT addr", curr_instruction_opcode);
+  // absolute addressing mode: retrieve the data from a location in memory, address from the two bytes after the opcode (4 * 7 = 28 instructions)
+  for (int dest = 0; dest < 4; dest++) {
+    // MOV: [imm16] -> dest
+    sprintf(buffer, "MOV R%c,address", GP_REGISTERS[dest]); // ex: MOV RA,0x1234
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | GP_REG_WRITE[dest] | _PCC | _CIC); // NOTE: need to increment PC
 
-  // OUT from a memory address (high byte in C reg. low byte in D reg.)
-  print_curr_instruction("OUT addr", curr_instruction_opcode);
+    // MOV: dest -> [imm16]
+    sprintf(buffer, "MOV address,R%c", GP_REGISTERS[dest]); // ex: MOV 0x1234,RA
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MMW | GP_REG_ENBLE[dest] | _PCC | _CIC);
+    
+    // ADD: dest + [imm16] -> dest
+    sprintf(buffer, "ADD R%c,address", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_ADD | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+    
+    // SUB: dest - [imm16] -> dest
+    sprintf(buffer, "SUB R%c,address", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_SUB | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+    
+    // AND: dest & [imm16] -> dest
+    sprintf(buffer, "AND R%c,address", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_AND | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+    
+    // OR: dest | [imm16] -> dest
+    sprintf(buffer, "OR R%c,address", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_OR | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+    
+    // XOR: dest ^ [imm16] -> dest
+    sprintf(buffer, "XOR R%c,address", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_XOR | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _PCC | _CIC);
+    
+    // CMP: dest > [imm16] -> F reg. = XX00 ; dest < [imm16] -> F reg. = XX10 ; dest = [imm16] -> F reg. = XX01
+    sprintf(buffer, "CMP R%c,address", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+    write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_CMP | _RFW | _PCC | _CIC);
+  }
+
+  // indirect addressing mode: retrieve the data from a location in memory, address from the C reg. (low byte) and D reg. (high byte)
+  for (int dest = 0; dest < 4; dest++) {
+    // MOV: [RCD] -> dest
+    sprintf(buffer, "MOV R%c,[RCD]", GP_REGISTERS[dest]); // ex: MOV RA,[RCD]
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
+    write_microcode_byte(curr_mc_address++, _RDE | _TUW); // D reg. contains high byte
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | GP_REG_WRITE[dest] | _CIC);
+
+    // MOV: dest -> [RCD]
+    sprintf(buffer, "MOV [RCD]R%c", GP_REGISTERS[dest]); // ex: MOV [RCD],RA
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
+    write_microcode_byte(curr_mc_address++, _RDE | _TUW); // D reg. contains high byte
+    write_microcode_byte(curr_mc_address++, _TRE | _MMW | GP_REG_ENBLE[dest] | _CIC);
+    
+    // ADD: dest + [RCD] -> dest
+    sprintf(buffer, "ADD R%c,[RCD]", GP_REGISTERS[dest]); // ex: ADD RA,[RCD]
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
+    write_microcode_byte(curr_mc_address++, _RDE | _TUW); // D reg. contains high byte
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_ADD | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _CIC);
+
+    // SUB: dest - [RCD] -> dest
+    sprintf(buffer, "SUB R%c,[RCD]", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
+    write_microcode_byte(curr_mc_address++, _RDE | _TUW); // D reg. contains high byte
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_SUB | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _CIC);
+
+    // AND: dest & [RCD] -> dest
+    sprintf(buffer, "AND R%c,[RCD]", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
+    write_microcode_byte(curr_mc_address++, _RDE | _TUW); // D reg. contains high byte
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_AND | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _CIC);
+    
+    // OR: dest | [RCD] -> dest
+    sprintf(buffer, "OR R%c,[RCD]", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
+    write_microcode_byte(curr_mc_address++, _RDE | _TUW); // D reg. contains high byte
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_OR | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _CIC);
+        
+    // XOR: dest ^ [RCD] -> dest
+    sprintf(buffer, "XOR R%c,[RCD]", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
+    write_microcode_byte(curr_mc_address++, _RDE | _TUW); // D reg. contains high byte
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_XOR | _REW | _RFW);
+    write_microcode_byte(curr_mc_address++, _REE | GP_REG_WRITE[dest] | _CIC);
+    
+    // CMP: dest > [RCD] -> F reg. = XX00 ; dest < [RCD] -> F reg. = XX10 ; dest = [RCD] -> F reg. = XX01
+    sprintf(buffer, "CMP R%c,[RCD]", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
+    write_microcode_byte(curr_mc_address++, _RDE | _TUW); // D reg. contains high byte
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_BUS | _REW);
+    write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_CMP | _RFW | _CIC);
+  }
+
+  /*||==============================||*/
+  /*|| 1 operand unconditional shit ||*/
+  /*||==============================||*/
 
 
-  /* conditional microcode */
+  /* OUT: output onto output register/display */
+
+  // OUT register addressed: dest -> O reg.
+  for (int dest = 0; dest < 4; dest++) {
+    sprintf(buffer, "OUT R%c", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _OTW | _CIC);
+  }
+
+  // OUT absolutely addressed: [imm16] -> O reg.
+  print_curr_instruction("OUT address", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC); // we don't have to increment PC before since it is incremented at end of fetch code
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _OTW | _PCC | _CIC);
+
+  // OUT indirectly addressed (low byte in C reg. high byte in D reg.): [RCD] -> O reg.
+  print_curr_instruction("OUT [RCD]", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RCE | _TLW );
+  write_microcode_byte(curr_mc_address++, _RDE | _TUW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _OTW | _CIC);
+
+
+  /* LSL: Logical Shift Left */
+
+  // LSL register addressed: dest << 1 -> dest
+  for (int dest = 0; dest < 4; dest++) {
+    sprintf(buffer, "LSL R%c", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_LSL | _REW | _RFW); 
+    write_microcode_byte(curr_mc_address++, GP_REG_WRITE[dest] | _REE | _CIC);
+  }
+
+  // LSL absolutely addressed: [imm16] << 1 -> [imm16]
+  print_curr_instruction("LSL address", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC); // we don't have to increment PC before since it is incremented at end of fetch code
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_LSL | _REW | _RFW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MMW | _REE     | _PCC | _CIC);
+
+  // LSL indirectly addressed (low byte in C reg. high byte in D reg.): [RCD] << 1 -> [RCD]
+  print_curr_instruction("LSL [RCD]", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RCE | _TLW);
+  write_microcode_byte(curr_mc_address++, _RDE | _TUW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_LSL | _REW | _RFW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MMW | _REE     | _CIC);
+
+
+  /* LSR: Logical Shift R */
+
+  // LSL register addressed: dest >> 1 -> dest
+  for (int dest = 0; dest < 4; dest++) {
+    sprintf(buffer, "LSR R%c", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _ALU_LSR | _REW | _RFW); 
+    write_microcode_byte(curr_mc_address++, GP_REG_WRITE[dest] | _REE | _CIC);
+  }
+
+  // LSL absolutely addressed: [imm16] >> 1 -> [imm16]
+  print_curr_instruction("LSR address", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC); // we don't have to increment PC before since it is incremented at end of fetch code
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_LSR | _REW | _RFW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MMW | _REE     | _PCC | _CIC);
+
+  // LSL indirectly addressed (low byte in C reg. high byte in D reg.): [RCD] >> 1 -> [RCD]
+  print_curr_instruction("LSR [RCD]", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RCE | _TLW);
+  write_microcode_byte(curr_mc_address++, _RDE | _TUW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_LSR | _REW | _RFW); 
+  write_microcode_byte(curr_mc_address++, _TRE | _MMW | _REE     | _CIC);
+  
+
+  /* PSH/POP: Push and Pop from stack pointer */
+  for (int dest = 0; dest < 4; dest++) {
+    // PSH: dest -> [SP--]
+    sprintf(buffer, "PSH R%c", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _SPE | _MMW | _SPD); /* TODO: IS SETTING _SPD counting down or up?? datasheet says active low, which we do, is up */
+    write_microcode_byte(curr_mc_address++, _SPC | _SPD | _CIC);
+
+    // POP: [++SP] -> dest
+    sprintf(buffer, "POP R%c", GP_REGISTERS[dest]);
+    print_curr_instruction(buffer, curr_instruction_opcode);
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+    write_microcode_byte(curr_mc_address++, _SPC);
+    write_microcode_byte(curr_mc_address++, _SPE | _MME | GP_REG_WRITE[dest] | _CIC);
+  }
+
+  // PSF: Push Flags onto Stack
+  print_curr_instruction("PSF", curr_instruction_opcode);
+
+  // PPF: Pop Flags off of Stack
+  print_curr_instruction("PPF", curr_instruction_opcode);
+
+
+  /* Stackpointer MOV */
+
+  
+  /*||===============================||*/
+  /*|| conditional jump instructions ||*/
+  /*||===============================||*/
 
   int jump_address = curr_mc_address;
 
   int no_jump_address = curr_mc_address;
+
+
+
 
   /**/
   unsigned long stop_time = millis();
