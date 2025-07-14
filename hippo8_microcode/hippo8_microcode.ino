@@ -45,7 +45,7 @@ datasheet links
 #define _PCC ((uint32_t)1 << 3) // program counter count
 #define _SPE ((uint32_t)1 << 4) // stack pointer enable
 #define _SPW ((uint32_t)1 << 5) // stack pointer write
-#define _SPD ((uint32_t)1 << 6) // stack pointer direction
+#define _SPD ((uint32_t)1 << 6) // stack pointer direction/decrement (0 = up, 1 = down)
 #define _SPC ((uint32_t)1 << 7) // stack pointer count
 
 // microcode ROM 1 Control Lines
@@ -123,7 +123,7 @@ datasheet links
 #define _F_IF ((int)64) // 1 = instruction fetch
 
 // creates the active low control lines bitfield
-#define _negatives (_PCE | _PCW | _PCC | _SPE | _SPD | _SPC | _TRE | _TLW | _TUW | _MMW | _CIC | _CIL | _PSW | _PSS | _RAW | _RBW | _RCW | _RDW | _REW | _RFW)
+#define _negatives (_PCE | _PCW | _PCC | _SPE | _SPC | _TRE | _TLW | _TUW | _MMW | _CIC | _CIL | _PSW | _PSS | _RAW | _RBW | _RCW | _RDW | _REW | _RFW)
 
 int fetch_address = 0;     // define start address of the fetch cycle microcode
 int interrupt_address = 0; // define start address of the intterupt routine microcode
@@ -368,7 +368,7 @@ void write_label_byte(int relevant_label_flags, boolean is_an_opcode, int curr_l
   /*
   A0-A7  : curr_label_address
   A8     : 9th bit
-  A9     : is_jump_to_be_taken
+  A9     : is_jump_to_RBE_taken
   A10-13 : relevant_label_flags
   */
   unsigned long full_label_address_with_9th_bit_set = curr_label_number + (256) + (is_an_opcode ? 0 : 512) + ((unsigned long)relevant_label_flags) * 1024;
@@ -486,11 +486,11 @@ void setup()
 
   // ensure interrupt inhibited: basically we jump to an address to toggle _II if it is set, and we jump past that address if _II is not set
   int predefined_label_0 = 0;
-  write_microcode_byte(curr_mc_address++, _goto(predefined_label_0));            // we jump to predefined label 0
-  write_label_if_flags_set(_F_II, false, predefined_label_0, curr_mc_address);   // define the next line as the address for the entry point to predefined label 0 if interrupt inhibit is set
+  write_microcode_byte(curr_mc_address++, _goto(predefined_label_0));                          // we jump to predefined label 0
+  write_label_if_flags_set(_F_II, IS_PREDEFINED_LABEL, predefined_label_0, curr_mc_address);   // define the next line as the address for the entry point to predefined label 0 if interrupt inhibit is set
 
-  write_microcode_byte(curr_mc_address++, _CTI);                                  // we toggle the interrupt so that it is clear
-  write_label_if_flags_clear(_F_II, false, predefined_label_0, curr_mc_address); // define the next line as the address for the entry point to predefined label 0 if interrupt inhibit is clear (we don't have to clear interrupt inhibit as it is already clear)
+  write_microcode_byte(curr_mc_address++, _CTI);                                               // we toggle the interrupt so that it is clear
+  write_label_if_flags_clear(_F_II, IS_PREDEFINED_LABEL, predefined_label_0, curr_mc_address); // define the next line as the address for the entry point to predefined label 0 if interrupt inhibit is clear (we don't have to clear interrupt inhibit as it is already clear)
 
   // initializes program counter from 0xFFFC in memory(reset vector address hardcoded in ROM)
    /*TODO: write this in ROM*/
@@ -940,7 +940,7 @@ void setup()
   write_microcode_byte(curr_mc_address++, _TRE | _MMW | _REE     | _CIC);
 
 
-  /* LSR: Logical Shift R */
+  /* LSR: Logical Shift Right */
 
   // LSL register addressed: dest >> 1 -> dest
   for (int dest = 0; dest < 4; dest++) {
@@ -974,41 +974,353 @@ void setup()
     sprintf(buffer, "PSH R%c", GP_REGISTERS[dest]);
     print_curr_instruction(buffer, curr_instruction_opcode);
     write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
-    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _SPE | _MMW | _SPD); /* TODO: IS SETTING _SPD counting down or up?? datasheet says active low, which we do, is up */
-    write_microcode_byte(curr_mc_address++, _SPC | _SPD | _CIC);
+    write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[dest] | _SPE | _MMW | _SPD); // dest -> [SP]
+    write_microcode_byte(curr_mc_address++, _SPC | _SPD | _CIC);                      // decrement SP ([SP] now useable)
 
     // POP: [++SP] -> dest
     sprintf(buffer, "POP R%c", GP_REGISTERS[dest]);
     print_curr_instruction(buffer, curr_instruction_opcode);
     write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
-    write_microcode_byte(curr_mc_address++, _SPC);
-    write_microcode_byte(curr_mc_address++, _SPE | _MME | GP_REG_WRITE[dest] | _CIC);
+    write_microcode_byte(curr_mc_address++, _SPC);                                    // increment SP
+    write_microcode_byte(curr_mc_address++, _SPE | _MME | GP_REG_WRITE[dest] | _CIC); // [SP] -> dest ([SP] now useable)
   }
 
   // PSF: Push Flags onto Stack
   print_curr_instruction("PSF", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RFE | _SPE | _MMW | _SPD); // F reg. -> [SP]
+  write_microcode_byte(curr_mc_address++, _SPC | _SPD | _CIC);        // decrement SP
 
   // PPF: Pop Flags off of Stack
   print_curr_instruction("PPF", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _SPC | _ALU_x00 | _REW);       // increment SP, x00 -> E reg.
+  write_microcode_byte(curr_mc_address++, _SPE | _MME | _ALU_OR | _RFW); // flags of [SP++] | x00 go into F reg.
+
+  int predefined_label_1 = 1;                                         // need to prevent messing up pre-subroutine state of interrupt flags
+  write_microcode_byte(curr_mc_address++, _goto(predefined_label_1)); // based on N and II flags, we toggle interrupt
+  
+  int toggle_interrupt_address = curr_mc_address;
+  write_microcode_byte(curr_mc_address++, _CTI);
+
+  int no_toggle_interrupt_address = curr_mc_address;
+  if (IS_LABEL_ROM) {
+    int ALL_FLAGS = _F_C | _F_Z | _F_N | _F_V | _F_II | _F_IR | _F_IF;
+    for (int curr_flag_combo = 0; curr_flag_combo <= ALL_FLAGS; curr_flag_combo++) {
+      boolean IS_NEGATIVE_AND_INTERRUPT_INHIBIT_CLEAR = (curr_flag_combo & (_F_N | _F_II)) == 0;
+      if (IS_NEGATIVE_AND_INTERRUPT_INHIBIT_CLEAR) {                                                                            // checks if neither the negative flag nor interrupt inhibit flag is set
+        write_label_byte(curr_flag_combo               , IS_PREDEFINED_LABEL, predefined_label_1, no_toggle_interrupt_address); // if both  clear, don't toggle interrupt -> II now clear
+        write_label_byte(curr_flag_combo | _F_N        , IS_PREDEFINED_LABEL, predefined_label_1, toggle_interrupt_address);    // if only N  set, toggle interrupt       -> II now set
+        write_label_byte(curr_flag_combo | _F_II       , IS_PREDEFINED_LABEL, predefined_label_1, toggle_interrupt_address);    // if only II set, toggle interrupt       -> II now clear
+        write_label_byte(curr_flag_combo | _F_N | _F_II, IS_PREDEFINED_LABEL, predefined_label_1, no_toggle_interrupt_address); // if both    set, don't toggle interrupt -> II now set
+      }
+    }
+  }
+  write_microcode_byte(curr_mc_address++, _SPE | _MME | _FLG_BUS | _RFW | _CIC); // pop flags from stack and write into F reg.
 
 
-  /* Stackpointer MOV */
+  /* Stack Pointer MOV */
+
+  // MOV SP,RCD: C reg., D reg. -> SP
+  print_curr_instruction("MOV SP,RCD", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RCE | _TLW);
+  write_microcode_byte(curr_mc_address++, _RDE | _TUW);
+  write_microcode_byte(curr_mc_address++, _TRE | _SPW | _CIC);
+
+  // MOV RCD,SP: SP -> C reg., D reg.
+  print_curr_instruction("MOV RCD,SP", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _SPL | _RCW);
+  write_microcode_byte(curr_mc_address++, _SPU | _RDW | _CIC);
+
 
   
-  /*||===============================||*/
-  /*|| conditional jump instructions ||*/
-  /*||===============================||*/
+  /*||===================||*/
+  /*|| jump instructions ||*/
+  /*||===================||*/
 
-  int jump_address = curr_mc_address;
+  /* immediate addressing mode */
+
+  int jump_address = curr_mc_address; // [PC++][PC] -> [PC] (puts imm16 into SP)
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC); // currently on lower byte of imm16
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW);
+  write_microcode_byte(curr_mc_address++, _TRE | _PCW | _CIC);        // load imm16 into PC, go to fetch
 
   int no_jump_address = curr_mc_address;
+  write_microcode_byte(curr_mc_address++, _PCC);        // skip first  half of imm16
+  write_microcode_byte(curr_mc_address++, _PCC | _CIC); // skip second half of imm16, go to fetch
+  
+  // JMP: unconditional jump
+  print_curr_instruction("JMP address", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, jump_address);
+
+  // JSR address : jump to subroutine
+  print_curr_instruction("JSR address", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW | _PCC);
+  write_microcode_byte(curr_mc_address++, _PCL | _SPE | _MMW | _SPD);        // first push low  byte onto stack
+  write_microcode_byte(curr_mc_address++, _SPC | _SPD);
+  write_microcode_byte(curr_mc_address++, _PCU | _SPE | _MMW | _SPD);        // then  push high byte onto stack
+  write_microcode_byte(curr_mc_address++, _TRE | _PCW | _SPC | _SPD | _CIC); // imm16 -> PC, decrement SP
+
+  // JCS address : jump if carry set
+  print_curr_instruction("JCS address", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_C, IS_OPCODE, curr_instruction_opcode,      jump_address);
+  write_label_if_flags_clear(_F_C, IS_OPCODE, curr_instruction_opcode++, no_jump_address);
+
+  // JZS address : jump if zero set
+  print_curr_instruction("JZS address", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_Z, IS_OPCODE, curr_instruction_opcode,      jump_address);
+  write_label_if_flags_clear(_F_Z, IS_OPCODE, curr_instruction_opcode++, no_jump_address);
+
+  // JNS address : jump if negative set
+  print_curr_instruction("JNS address", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_N, IS_OPCODE, curr_instruction_opcode,      jump_address);
+  write_label_if_flags_clear(_F_N, IS_OPCODE, curr_instruction_opcode++, no_jump_address);
+
+  // JVS address : jump if overflow set
+  print_curr_instruction("JVS address", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_V, IS_OPCODE, curr_instruction_opcode,      jump_address);
+  write_label_if_flags_clear(_F_V, IS_OPCODE, curr_instruction_opcode++, no_jump_address);
+
+
+  // JNC address : jump if carry not set
+  print_curr_instruction("JNC address", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_C, IS_OPCODE, curr_instruction_opcode,   no_jump_address);
+  write_label_if_flags_clear(_F_C, IS_OPCODE, curr_instruction_opcode++,    jump_address);
+
+  // JNZ address : jump if zero not set
+  print_curr_instruction("JNZ address", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_Z, IS_OPCODE, curr_instruction_opcode,   no_jump_address);
+  write_label_if_flags_clear(_F_Z, IS_OPCODE, curr_instruction_opcode++,    jump_address);
+
+  // JNN address : jump if negative not set
+  print_curr_instruction("JNN address", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_N, IS_OPCODE, curr_instruction_opcode,   no_jump_address);
+  write_label_if_flags_clear(_F_N, IS_OPCODE, curr_instruction_opcode++,    jump_address);
+
+  // JNV address : jump if overflow not set
+  print_curr_instruction("JNV address", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_V, IS_OPCODE, curr_instruction_opcode,   no_jump_address);
+  write_label_if_flags_clear(_F_V, IS_OPCODE, curr_instruction_opcode++,    jump_address);
+
+
+  /* indirect addressing mode */
+
+  jump_address = curr_mc_address;
+  write_microcode_byte(curr_mc_address++, _RCE | _TLW);
+  write_microcode_byte(curr_mc_address++, _RDE | _TUW);
+  write_microcode_byte(curr_mc_address++, _TRE | _PCW | _CIC);
+
+  no_jump_address = nop_address; // we go to noop since we do nothing (no imm16), duh
+
+  // JMP [RCD] : unconditional jump
+  print_curr_instruction("JMP [RCD]", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, jump_address);
+
+  // JSR [RCD] : jump to subroutine
+  print_curr_instruction("JSR [RCD]", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RCE | _TLW);
+  write_microcode_byte(curr_mc_address++, _RDE | _TUW);
+  write_microcode_byte(curr_mc_address++, _PCL | _SPE | _MMW | _SPD);        // first push low  byte onto stack
+  write_microcode_byte(curr_mc_address++, _SPC | _SPD);
+  write_microcode_byte(curr_mc_address++, _PCU | _SPE | _MMW | _SPD);        // then  push high byte onto stack
+  write_microcode_byte(curr_mc_address++, _TRE | _PCW | _SPC | _SPD | _CIC); // imm16 -> PC, decrement SP
+
+  // JCS [RCD] : jump if carry set
+  print_curr_instruction("JCS [RCD]", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_C, IS_OPCODE, curr_instruction_opcode,      jump_address);
+  write_label_if_flags_clear(_F_C, IS_OPCODE, curr_instruction_opcode++, no_jump_address);
+
+  // JZS [RCD] : jump if zero set
+  print_curr_instruction("JZS [RCD]", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_Z, IS_OPCODE, curr_instruction_opcode,      jump_address);
+  write_label_if_flags_clear(_F_Z, IS_OPCODE, curr_instruction_opcode++, no_jump_address);
+
+  // JNS [RCD] : jump if negative set
+  print_curr_instruction("JNS [RCD]", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_N, IS_OPCODE, curr_instruction_opcode,      jump_address);
+  write_label_if_flags_clear(_F_N, IS_OPCODE, curr_instruction_opcode++, no_jump_address);
+
+  // JVS [RCD] : jump if overflow set
+  print_curr_instruction("JVS [RCD]", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_V, IS_OPCODE, curr_instruction_opcode,      jump_address);
+  write_label_if_flags_clear(_F_V, IS_OPCODE, curr_instruction_opcode++, no_jump_address);
+
+
+  // JNC [RCD] : jump if carry not set
+  print_curr_instruction("JNC [RCD]", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_C, IS_OPCODE, curr_instruction_opcode,   no_jump_address);
+  write_label_if_flags_clear(_F_C, IS_OPCODE, curr_instruction_opcode++,    jump_address);
+
+  // JNZ [RCD] : jump if zero not set
+  print_curr_instruction("JNZ [RCD]", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_Z, IS_OPCODE, curr_instruction_opcode,   no_jump_address);
+  write_label_if_flags_clear(_F_Z, IS_OPCODE, curr_instruction_opcode++,    jump_address);
+
+  // JNN [RCD] : jump if negative not set
+  print_curr_instruction("JNN [RCD]", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_N, IS_OPCODE, curr_instruction_opcode,   no_jump_address);
+  write_label_if_flags_clear(_F_N, IS_OPCODE, curr_instruction_opcode++,    jump_address);
+
+  // JNV [RCD] : jump if overflow not set
+  print_curr_instruction("JNV [RCD]", curr_instruction_opcode);
+  write_label_if_flags_set  (_F_V, IS_OPCODE, curr_instruction_opcode,   no_jump_address);
+  write_label_if_flags_clear(_F_V, IS_OPCODE, curr_instruction_opcode++,    jump_address);
+
+
+  /*||========================||*/
+  /*|| basic I/O instructions ||*/
+  /*||      (port shit)       ||*/
+  /*||========================||*/
+
+  // OUT value,RA : RA -> PORT[imm8]
+  print_curr_instruction("OUT value,RA", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _PSS | _PCC); // imm8 -> Port Select
+  write_microcode_byte(curr_mc_address++, _RAE | _PSW | _CIC);
+
+  // INP RA,value : PORT[imm8] -> RA
+  print_curr_instruction("INP RA,value", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _PSS | _PCC); // imm8 -> Port Select
+  write_microcode_byte(curr_mc_address++, _PSE | _RAW | _CIC);
+
+  // OUT RB,RA : RA -> PORT[RB]
+  print_curr_instruction("OUT RB,RA", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RBE | _PSS);        // B reg. -> Port Select
+  write_microcode_byte(curr_mc_address++, _RAE | _PSW | _CIC); // A reg. -> Port
+
+  // INP RA,RB : PORT[RB] -> RA
+  print_curr_instruction("INP RA,RB", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RBE | _PSS);        // B reg. -> Port Select
+  write_microcode_byte(curr_mc_address++, _PSE | _RAW | _CIC); // A reg. -> Port
+
+
+  /*||=========================================||*/
+  /*|| MOV: absolute indexed, indirect indexed ||*/
+  /*||           (indexed addressing)          ||*/
+  /*||=========================================||*/
+
+  // MOV RA,address,RB : [imm16 + RB] -> RA
+  print_curr_instruction("MOV RA,address,RB", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RFE     | _SPE | _MMW);                   // push flags onto stack
+  write_microcode_byte(curr_mc_address++, _FLG_CLC | _RFW);                          // clear carry for adding B reg.
+  write_microcode_byte(curr_mc_address++, _PCE     | _MME | _ALU_BUS | _REW);        // imm16 lower byte -> E reg.
+  write_microcode_byte(curr_mc_address++, _ALU_ADD | _REW | _RBE     | _RFW | _PCC); // E reg. + B reg. -> E reg., increment PC
+  write_microcode_byte(curr_mc_address++, _TLW     | _REE);                          // E reg. -> lower TR
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);                          // x00 -> E reg.
+  write_microcode_byte(curr_mc_address++, _PCE     | _MME | _ALU_ADD | _REW);        // imm16 upper byte + carry? -> E reg.
+  write_microcode_byte(curr_mc_address++, _TUW     | _REE | _PCC);                   // E reg. -> upper TR, increment PC
+  write_microcode_byte(curr_mc_address++, _TRE     | _MME | _RAW);                   // [TR] -> A reg.
+  write_microcode_byte(curr_mc_address++, _SPE     | _MME | _FLG_BUS | _RFW | _CIC); // restore flags
+
+  // MOV RA,[address],RB : [[imm16] + RB] -> RA
+  print_curr_instruction("MOV RA,[address],RB", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RFE | _SPE | _MMW | _SPD);               // RF -> [SP]              (push flags onto stack)
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC | _SPD | _SPC); // [PC] -> TRL, PC++, SP-- (imm16 lower byte -> TR lower, increment PC, decrement SP)
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW | _PCC);               // [PC] -> TRU, PC++       (imm16 upper byte -> TR upper, increment PC)
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_BUS | _REW);           // [TR] -> RE              ([imm16] -> E reg.)
+  write_microcode_byte(curr_mc_address++, _REE | _SPE | _MMW | _FLG_STC | _RFW);    // RE -> [SP], RF=XXX1     (push [imm16] onto stack (will use later), set carry to get [imm16+1])
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);                         // RE = x00                (set E reg. to zero)
+  write_microcode_byte(curr_mc_address++, _TRL | _ALU_ADD | _REW | _RFW);           // RE += TRL, RF=XXXX      
+  write_microcode_byte(curr_mc_address++, _REE | _TLW);                             // RE -> TRL
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);                         // RE = x00
+  write_microcode_byte(curr_mc_address++, _TRU | _ALU_ADD | _REW | _RFW);           // RE += TRU, RF=XXXX
+  write_microcode_byte(curr_mc_address++, _TUW | _REE);                             // RE -> TRU               (TR now contains imm16+1)
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_BUS | _REW);           // [TR] -> RE              (E reg. = [imm16+1], E reg. is a temporary step cuz we modify TR in next step)
+  write_microcode_byte(curr_mc_address++, _REE | _TUW);                             // RE -> TRU               
+  write_microcode_byte(curr_mc_address++, _RBE | _ALU_BUS | _REW);                  // RB -> RE
+  write_microcode_byte(curr_mc_address++, _SPE | _MME | _ALU_ADD | _REW | _RFW);    // RE += [SP], RF=XXXX     (add B reg. to [imm16])
+  write_microcode_byte(curr_mc_address++, _REE | _TLW | _SPC);                      // RE -> TRL, SP++
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);                         // RE = x00
+  write_microcode_byte(curr_mc_address++, _TRU | _ALU_ADD | _REW);                  // RE += TRU               (add any necessary carrys to [imm16+1])
+  write_microcode_byte(curr_mc_address++, _REE | _TUW);                             // RE -> TLU               (TR now contains basically [imm16+1],[imm16] + B reg.)
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _RAW);                      // [TR] -> RA              (now we index into memory with the indexed address and store the data in A reg.)  
+  write_microcode_byte(curr_mc_address++, _SPE | _MME | _FLG_BUS | _RFW | _CIC);    // [SP] -> RF              (restore flags)
+  // TODO: finish
+
+  // MOV address,RB,RA : RA -> [imm16 + B]
+  print_curr_instruction("MOV address,RB,RA", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  write_microcode_byte(curr_mc_address++, _RFE     | _SPE | _MMW);                   // push flags onto stack
+  write_microcode_byte(curr_mc_address++, _FLG_CLC | _RFW);                          // clear carry for adding A reg.
+  write_microcode_byte(curr_mc_address++, _PCE     | _MME | _ALU_BUS | _REW);        // 
+  write_microcode_byte(curr_mc_address++, _ALU_ADD | _REW | _RBE     | _RFW | _PCC); //
+  write_microcode_byte(curr_mc_address++, _TLW     | _REE);                          //
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);                          //
+  write_microcode_byte(curr_mc_address++, _PCE     | _MME | _ALU_ADD | _REW);        //
+  write_microcode_byte(curr_mc_address++, _TUW     | _REE | _PCC);                   //
+  write_microcode_byte(curr_mc_address++, _TRE     | _MMW | _RAE);                   // A reg. -> [TR]
+  write_microcode_byte(curr_mc_address++, _SPE     | _MME | _FLG_BUS | _RFW | _CIC); // restore flags
+
+
+  // MOV [address],RB,RA : RA -> [[imm16] + B]
+  print_curr_instruction("MOV [address],RB,RA", curr_instruction_opcode);
+  write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+
+  write_microcode_byte(curr_mc_address++, _RFE | _SPE | _MMW | _SPD);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC | _SPD | _SPC);
+  write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW | _PCC);
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_BUS | _REW);
+  write_microcode_byte(curr_mc_address++, _REE | _SPE | _MMW | _FLG_STC | _RFW);
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);
+  write_microcode_byte(curr_mc_address++, _TRL | _ALU_ADD | _REW | _RFW);
+  write_microcode_byte(curr_mc_address++, _TLW | _REE);
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);
+  write_microcode_byte(curr_mc_address++, _TRU | _ALU_ADD | _REW | _RFW);
+  write_microcode_byte(curr_mc_address++, _TUW | _REE);
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _ALU_BUS | _REW);
+  write_microcode_byte(curr_mc_address++, _TUW | _REE);
+  write_microcode_byte(curr_mc_address++, _RBE | _ALU_BUS | _REW);
+  write_microcode_byte(curr_mc_address++, _SPE | _MME | _ALU_ADD | _REW | _RFW);
+  write_microcode_byte(curr_mc_address++, _REE | _TLW | _SPC);
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);
+  write_microcode_byte(curr_mc_address++, _TRU | _ALU_ADD | _REW);
+  write_microcode_byte(curr_mc_address++, _REE | _TUW);
+  write_microcode_byte(curr_mc_address++, _TRE | _MMW | _RAE);
+  write_microcode_byte(curr_mc_address++, _FLG_BUS | _RFW | _SPE | _MME | _CIC);
 
 
 
+  /*||================||*/
+  /*||    SPI SHIT    ||*/
+  /*||================||*/
 
-  /**/
+  // INB RA,value
+
+  // INB [RCD],RB,val
+
+
+  /* set unused op codes to HLT */
+  Serial.println(F("Writing unsused codes"));
+
+  write_microcode_byte(curr_mc_address, _HLT);
+  while (curr_instruction_opcode < 256) {
+    write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  }
+  curr_mc_address++;
+
+  /* extra shit */
+
+
   unsigned long stop_time = millis();
   int time_spent = (start_time - stop_time) / 1000;
+  sprintf(buffer, "took %ds for ROM#%d", time_spent, CURR_ROM_NUM);
+  Serial.println(buffer);
+
+  if (num_write_errors > 0) {
+    sprintf(buffer, "\r\nERRORS!!: %d\r\n", num_write_errors);
+    Serial.println(buffer);
+  }
+  Serial.println(F("done! :)"));
 }
 
 void loop() {}
