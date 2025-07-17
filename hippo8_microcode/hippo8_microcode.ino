@@ -4,6 +4,8 @@ Creates the ROMS driving the Instruction Decoder & Control Logic
 heavily inspired by DerULF's implementation
 also credit to Ben Eater
 
+data is formatted in little endian
+
 datasheet links
 - 74HC595    (shift registers)   : https://www.ti.com/lit/ds/symlink/sn74hc595.pdf
 - AT28C64    (microcode EEPROMS) : https://ww1.microchip.com/downloads/en/devicedoc/doc0001h.pdf
@@ -15,23 +17,23 @@ datasheet links
 /* defining constants */
 
 // arduino pin constants
-#define SHIFT_DATA 2
-#define SHIFT_CLOCK 3
-#define SHIFT_LATCH 4
-#define EEPROM_D0 5
-#define EEPROM_D7 12
+#define SHIFT_DATA   2
+#define SHIFT_CLOCK  3
+#define SHIFT_LATCH  4
+#define EEPROM_D0    5
+#define EEPROM_D7    12
 #define WRITE_ENABLE 13
 
 // 'set_eeprom_address' variable subsitutes
-#define READ true
-#define WRITE false
-#define CHIP_ENABLE true   // for SST39SF040 chip enable
+#define READ         true
+#define WRITE        false
+#define CHIP_ENABLE  true  // for SST39SF040 chip enable
 #define CHIP_DISABLE false // for SST39SF040 chip enable
 
 // ROM chip reference definitions
-#define CURR_ROM_NUM 0    // 0, 1, 2, 3
+#define CURR_ROM_NUM 4    // 0, 1, 2, 3
 #define FIRST_LABEL_ROM 4 // 4, 5
-#define IS_LABEL_ROM (CURR_ROM_NUM >= FIRST_LABEL_ROM)
+#define IS_LABEL_ROM (CURR_ROM_NUM >= FIRST_LABEL_ROM) 
 #define IS_MCODE_ROM !IS_LABEL_ROM
 
 // 'write_label_byte' variable substitutes
@@ -153,10 +155,10 @@ void set_data_pins_mode(int mode) { // pass in 'INPUT' or 'OUTPUT'
   }
 }
 
-void set_SST39SF040_address(int address, boolean is_output_enabled, boolean is_chip_enabled) {
+void set_SST39SF040_address(unsigned long address, boolean is_output_enabled, boolean is_chip_enabled) {
   digitalWrite(SHIFT_LATCH, LOW);
 
-  // 19-bit address space (19 pins) + out enable (1 pin) + chip enable (1 pin) = 21 pins ~ 3 bytes
+  // 19-bit address space (19 (17 used) pins) + out enable (1 pin) + chip enable (1 pin) = 21 pins ~ 3 bytes
   shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, (address >> 16) | (is_output_enabled ? 0 : 0x80) | (is_chip_enabled ? 0 : 0x40)); // shifts top    byte and adds output enable and chip enable bits
   shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, (address >> 8));                                                                  // shifts middle byte
   shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, address);                                                                         // shifts bottom byte
@@ -164,7 +166,7 @@ void set_SST39SF040_address(int address, boolean is_output_enabled, boolean is_c
   digitalWrite(SHIFT_LATCH, HIGH);
 }
 
-void write_byte_to_SST39SF040(int address, byte data) { // directly writes a byte given an address
+void write_byte_to_SST39SF040(unsigned long address, byte data) { // directly writes a byte given an address
   set_data_pins_mode(OUTPUT);
   set_SST39SF040_address(address, WRITE, CHIP_ENABLE);
   digitalWrite(WRITE_ENABLE, LOW);
@@ -179,7 +181,7 @@ void write_byte_to_SST39SF040(int address, byte data) { // directly writes a byt
   digitalWrite(WRITE_ENABLE, HIGH);
 }
 
-void write_data_to_SST39SF040(int address, byte data) { // writes data to eeprom given an address, conforming to the data program protocol
+void write_data_to_SST39SF040(unsigned long address, byte data) { // writes data to eeprom given an address, conforming to the data program protocol
   /*
   Byte Program Operation (from the datasheet):
   1. The first step is the three-byte load sequence for
@@ -222,14 +224,13 @@ void write_data_to_SST39SF040(int address, byte data) { // writes data to eeprom
   }
 }
 
-byte read_from_SST39SF040(int address) {
+byte read_from_SST39SF040(unsigned long address) {
   set_data_pins_mode(INPUT);
   set_SST39SF040_address(address, READ, CHIP_ENABLE);
   delayMicroseconds(1);
 
   byte data_read = 0;
-  for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--)
-  {
+  for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--) {
     data_read = data_read * 2 + digitalRead(pin);
   }
 
@@ -237,15 +238,64 @@ byte read_from_SST39SF040(int address) {
 }
 
 void erase_sector_from_SST39SF040(unsigned long base_address) {
-  // TODO
+  
+  write_byte_to_SST39SF040(0x5555, 0xAA);
+  write_byte_to_SST39SF040(0x2AAA, 0x55);
+  write_byte_to_SST39SF040(0x5555, 0x80);
+  write_byte_to_SST39SF040(0x5555, 0xAA);
+  write_byte_to_SST39SF040(0x2AAA, 0x55);
+  write_byte_to_SST39SF040(base_address, 0x30);
+
+  byte l = read_from_SST39SF040(base_address);
+  unsigned long expected_end = millis() + 100;
+  while ((l != 0xff) && millis() < expected_end) {
+    set_SST39SF040_address  (base_address, WRITE, CHIP_DISABLE);
+    l = read_from_SST39SF040(base_address);
+  }
+
+  if (l != 0xff) {
+    char buffer[40];
+    sprintf(buffer, "\r\nSector Erase ERROR on %06x!", base_address);
+    Serial.println(buffer);
+  }
 }
 
 void erase_SST39SF040() {
-  // TODO
+  // perform the 'chip erase operation'
+  write_byte_to_SST39SF040(0x5555, 0xAA);
+  write_byte_to_SST39SF040(0x2AAA, 0x55);
+  write_byte_to_SST39SF040(0x5555, 0x80);
+  write_byte_to_SST39SF040(0x5555, 0xAA);
+  write_byte_to_SST39SF040(0x2AAA, 0x55);
+  write_byte_to_SST39SF040(0x5555, 0x10);
+
+  byte l = read_from_SST39SF040(0);
+  unsigned long expected_end = millis() + 250;
+  while ((l != 0xff) && millis() < expected_end) {
+    set_SST39SF040_address(0, WRITE, CHIP_DISABLE);
+    l = read_from_SST39SF040(0);
+  }
+
+  if (l != 0xff) {
+    Serial.println(F("\r\nChip Erase ERROR!\r\n"));
+  }
 }
 
 void print_256_bytes_from_SST39SF040(unsigned long base_address) {
-  // TODO
+  for (long base = 0; base <= 255; base += 16) {
+    byte data[16];
+    for (long offset = 0; offset <= 15; offset++) {
+      data[offset] = read_from_SST39SF040(base_address + base + offset);
+    }
+
+    char buffer[80];
+    sprintf(buffer, "%06x: (%02x) <- sum gay shi  %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
+            base_address + base, data[1], data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8],
+            data[9], data[10], data[11], data[12], data[13], data[14], data[15]);
+
+    Serial.println(buffer);
+    // Serial.println(data[0]);
+  }
 }
 
 int get_SST39SF040_id() {
@@ -263,27 +313,24 @@ void set_AT28C64_address(int address, boolean is_output_enabled) {
 
 void write_to_AT28C64(int address, byte data) {
   byte data_read = read_from_AT28C64(address);
-  if (data_read != data)
-  {
+  if (data_read != data) {
     set_data_pins_mode(OUTPUT);
     set_AT28C64_address(address, WRITE);
 
     byte curr_data = data;
-    for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--)
-    {
+    for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--) {
       digitalWrite(pin, curr_data & 0x80);
       curr_data <<= 1;
     }
 
     digitalWrite(WRITE_ENABLE, LOW);
-    delayMicroseconds(1);
+    delayMicroseconds(200);
     digitalWrite(WRITE_ENABLE, HIGH);
 
-    // error correction
+    // error checking
     byte l = read_from_AT28C64(address);
     int cnt = 1000;
-    while ((cnt > 0) && (l != data))
-    {
+    while ((cnt > 0) && (l != data)) {
       cnt--;
       if ((address & 0xff) == 0)
         l = read_from_AT28C64(address + 1);
@@ -291,8 +338,7 @@ void write_to_AT28C64(int address, byte data) {
         l = read_from_AT28C64(address - 1);
       l = read_from_AT28C64(address);
     }
-    if (l != data)
-    {
+    if (l != data) {
       char buf[60];
       sprintf(buf, "\r\nWRITE ERROR on %04x! (%02x %02x)\r\n", address, data, l);
       Serial.println(buf);
@@ -315,12 +361,10 @@ byte read_from_AT28C64(int address) {
 }
 
 void print_256_bytes_from_AT28C64(int base_address) { // prints the next 256 bytes of data starting from the 'base_address'
-  for (int base = base_address; base < base_address + 256; base += 16)
-  {
+  for (int base = base_address; base < base_address + 256; base += 16) {
     byte data[16];
 
-    for (int offset = 0; offset < 16; offset++)
-    {
+    for (int offset = 0; offset < 16; offset++) {
       data[offset] = read_from_AT28C64(base + offset);
     }
 
@@ -404,7 +448,7 @@ void write_label_if_flags_set(int relevant_label_flags, boolean is_an_opcode, in
   }
 }
 
-void write_label_if_flags_clear(int relevant_label_flags, boolean is_an_opcode, int curr_label_number, int destination_address) { // basically same as 'write_label_if_flags_set' but for 'not' logic (ex: jump if not set)
+void write_label_if_flags_clear(int relevant_label_flags, boolean is_an_opcode, int curr_label_number, int destination_address) { // basically same as 'write_label_if_flags_set' but for 'not' logic (eg: jump if not set)
   if (!IS_LABEL_ROM) return;
 
   int BASE_CPU_FLAG_COMBO = _F_C | _F_Z | _F_N | _F_V | _F_II;                                            // (exclude IF, IR, and IC flags)
@@ -462,9 +506,32 @@ void print_curr_instruction(char* curr_instruction_name, int curr_instruction_op
   Serial.println(buffer);
 }
 
-void setup()
-{
+// void setup() {
+//   Serial.begin(57600);
+//   init_ports();
+  
+//   // if (IS_LABEL_ROM) {
+//   //   Serial.println(F("Erasing Chip..."));
+//   //   erase_SST39SF040();
+//   // }
+
+//   Serial.println(F("printing..."));
+//   // print_256_bytes_from_AT28C64(0); 
+//   for (int i=0; i<256; i++) {
+//     print_256_bytes_from_SST39SF040(i*256);
+//   }
+//   // print_256_bytes_from_SST39SF040(0);
+
+
+//   // set_SST39SF040_address(0x00000, READ, CHIP_ENABLE);
+//   // set_SST39SF040_address(0x10, READ, CHIP_ENABLE);
+//   // byte data = read_from_SST39SF040(0x10);
+//   // // Serial.println(data);
+// }
+
+void setup() {
   /* initialization steps */
+  // Serial.begin(9600);
   Serial.begin(57600);
 
   char buffer[80];
@@ -473,6 +540,13 @@ void setup()
 
   init_ports();
   unsigned long start_time = millis();
+
+
+  
+  if (IS_LABEL_ROM) {
+    Serial.println(F("Erasing Chip..."));
+    erase_SST39SF040();
+  }
 
   /*
   BEHOLD THE HOLY MICROCODE
@@ -613,7 +687,7 @@ void setup()
     while (src < 4) {
       if (src != dest) {
         // MOV: src -> dest
-        sprintf(buffer, "MOV R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]); // ex: MOV RA,RB
+        sprintf(buffer, "MOV R%c,R%c", GP_REGISTERS[dest], GP_REGISTERS[src]); // eg: MOV RA,RB
         print_curr_instruction(buffer, curr_instruction_opcode);
         write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
         write_microcode_byte(curr_mc_address++, GP_REG_ENBLE[src] | GP_REG_WRITE[dest] | _CIC);
@@ -673,7 +747,7 @@ void setup()
   // immediate addressing mode: retrieve the data right after the opcode in memory (4 * 7 = 28 instructions)
   for (int dest = 0; dest < 4; dest++) {
     // MOV: imm8 -> dest
-    sprintf(buffer, "MOV R%c,#", GP_REGISTERS[dest]); // ex: MOV RA,0xFF
+    sprintf(buffer, "MOV R%c,#", GP_REGISTERS[dest]); // eg: MOV RA,0xFF
     print_curr_instruction(buffer, curr_instruction_opcode);
     write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
     write_microcode_byte(curr_mc_address++, _PCE | _MME | GP_REG_WRITE[dest] | _PCC | _CIC); // NOTE: increment PC since we already incremented in fetch cycle
@@ -729,7 +803,7 @@ void setup()
   // absolute addressing mode: retrieve the data from a location in memory, address from the two bytes after the opcode (4 * 7 = 28 instructions)
   for (int dest = 0; dest < 4; dest++) {
     // MOV: [imm16] -> dest
-    sprintf(buffer, "MOV R%c,address", GP_REGISTERS[dest]); // ex: MOV RA,0x1234
+    sprintf(buffer, "MOV R%c,address", GP_REGISTERS[dest]); // eg: MOV RA,0x1234
     print_curr_instruction(buffer, curr_instruction_opcode);
     write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
     write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
@@ -737,7 +811,7 @@ void setup()
     write_microcode_byte(curr_mc_address++, _TRE | _MME | GP_REG_WRITE[dest] | _PCC | _CIC); // NOTE: need to increment PC
 
     // MOV: dest -> [imm16]
-    sprintf(buffer, "MOV address,R%c", GP_REGISTERS[dest]); // ex: MOV 0x1234,RA
+    sprintf(buffer, "MOV address,R%c", GP_REGISTERS[dest]); // eg: MOV 0x1234,RA
     print_curr_instruction(buffer, curr_instruction_opcode);
     write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
     write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
@@ -807,7 +881,7 @@ void setup()
   // indirect addressing mode: retrieve the data from a location in memory, address from the C reg. (low byte) and D reg. (high byte)
   for (int dest = 0; dest < 4; dest++) {
     // MOV: [RCD] -> dest
-    sprintf(buffer, "MOV R%c,[RCD]", GP_REGISTERS[dest]); // ex: MOV RA,[RCD]
+    sprintf(buffer, "MOV R%c,[RCD]", GP_REGISTERS[dest]); // eg: MOV RA,[RCD]
     print_curr_instruction(buffer, curr_instruction_opcode);
     write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
     write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
@@ -815,7 +889,7 @@ void setup()
     write_microcode_byte(curr_mc_address++, _TRE | _MME | GP_REG_WRITE[dest] | _CIC);
 
     // MOV: dest -> [RCD]
-    sprintf(buffer, "MOV [RCD]R%c", GP_REGISTERS[dest]); // ex: MOV [RCD],RA
+    sprintf(buffer, "MOV [RCD],R%c", GP_REGISTERS[dest]); // eg: MOV [RCD],RA
     print_curr_instruction(buffer, curr_instruction_opcode);
     write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
     write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
@@ -823,7 +897,7 @@ void setup()
     write_microcode_byte(curr_mc_address++, _TRE | _MMW | GP_REG_ENBLE[dest] | _CIC);
     
     // ADD: dest + [RCD] -> dest
-    sprintf(buffer, "ADD R%c,[RCD]", GP_REGISTERS[dest]); // ex: ADD RA,[RCD]
+    sprintf(buffer, "ADD R%c,[RCD]", GP_REGISTERS[dest]); // eg: ADD RA,[RCD]
     print_curr_instruction(buffer, curr_instruction_opcode);
     write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
     write_microcode_byte(curr_mc_address++, _RCE | _TLW); // C reg. contains low  byte
@@ -1310,9 +1384,15 @@ void setup()
 
   /* extra shit */
 
+  if (IS_MCODE_ROM) {
+    print_256_bytes_from_AT28C64(0); // just checking if things are changing
+
+  } else {
+    print_256_bytes_from_SST39SF040(0);
+  }
 
   unsigned long stop_time = millis();
-  int time_spent = (start_time - stop_time) / 1000;
+  int time_spent = (stop_time - start_time) / 1000;
   sprintf(buffer, "took %ds for ROM#%d", time_spent, CURR_ROM_NUM);
   Serial.println(buffer);
 

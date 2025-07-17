@@ -1,6 +1,9 @@
 /*
 =============================================================================
-Code that writes a AT28C64 EEPROM driving a 4-digit 7-segment display output via th 74HC595 shift register
+IMPORTANT!!! this program writes to a AT28C64B! not the AT28C64 cuz I accidentally got the B version, its more complicated to implement grrrr :(
+
+
+Code that writes a AT28C64B EEPROM driving a 4-digit 7-segment display output via th 74HC595 shift register
 (inspired by Ben Eater and DerULF1)
 
 allows output to display 8-bit data in 4 formats (unsigned decimal, signed decimal/2's complement hexadecimal, binary)

@@ -1,0 +1,477 @@
+NOP	=> 0x00
+HLT	=> 0x01
+CLC	=> 0x02
+STC	=> 0x03
+SII	=> 0x04
+
+CII	=> 0x05
+
+RTS	=> 0x06
+
+RTI	=> 0x07
+
+MOV RA,RB	=> 0x08
+
+ADD RA,RB	=> 0x09
+
+SUB RA,RB	=> 0x0a
+
+AND RA,RB	=> 0x0b
+
+OR RA,RB	=> 0x0c
+
+XOR RA,RB	=> 0x0d
+
+CMP RA,RB	=> 0x0e
+
+MOV RA,RC	=> 0x0f
+
+ADD RA,RC	=> 0x10
+
+SUB RA,RC	=> 0x11
+
+AND RA,RC	=> 0x12
+
+OR RA,RC	=> 0x13
+
+XOR RA,RC	=> 0x14
+
+CMP RA,RC	=> 0x15
+
+MOV RA,RD	=> 0x16
+
+ADD RA,RD	=> 0x17
+
+SUB RA,RD	=> 0x18
+
+AND RA,RD	=> 0x19
+
+OR RA,RD	=> 0x1a
+
+XOR RA,RD	=> 0x1b
+
+CMP RA,RD	=> 0x1c
+
+MOV RB,RA	=> 0x1d
+
+ADD RB,RA	=> 0x1e
+
+SUB RB,RA	=> 0x1f
+
+AND RB,RA	=> 0x20
+
+OR RB,RA	=> 0x21
+
+XOR RB,RA	=> 0x22
+
+CMP RB,RA	=> 0x23
+
+MOV RB,RC	=> 0x24
+
+ADD RB,RC	=> 0x25
+
+SUB RB,RC	=> 0x26
+
+AND RB,RC	=> 0x27
+
+OR RB,RC	=> 0x28
+
+XOR RB,RC	=> 0x29
+
+CMP RB,RC	=> 0x2a
+
+MOV RB,RD	=> 0x2b
+
+ADD RB,RD	=> 0x2c
+
+SUB RB,RD	=> 0x2d
+
+AND RB,RD	=> 0x2e
+
+OR RB,RD	=> 0x2f
+
+XOR RB,RD	=> 0x30
+
+CMP RB,RD	=> 0x31
+
+MOV RC,RA	=> 0x32
+
+ADD RC,RA	=> 0x33
+
+SUB RC,RA	=> 0x34
+
+AND RC,RA	=> 0x35
+
+OR RC,RA	=> 0x36
+
+XOR RC,RA	=> 0x37
+
+CMP RC,RA	=> 0x38
+
+MOV RC,RB	=> 0x39
+
+ADD RC,RB	=> 0x3a
+
+SUB RC,RB	=> 0x3b
+
+AND RC,RB	=> 0x3c
+
+OR RC,RB	=> 0x3d
+
+XOR RC,RB	=> 0x3e
+
+CMP RC,RB	=> 0x3f
+
+MOV RC,RD	=> 0x40
+
+ADD RC,RD	=> 0x41
+
+SUB RC,RD	=> 0x42
+
+AND RC,RD	=> 0x43
+
+OR RC,RD	=> 0x44
+
+XOR RC,RD	=> 0x45
+
+CMP RC,RD	=> 0x46
+
+MOV RD,RA	=> 0x47
+
+ADD RD,RA	=> 0x48
+
+SUB RD,RA	=> 0x49
+
+AND RD,RA	=> 0x4a
+
+OR RD,RA	=> 0x4b
+
+XOR RD,RA	=> 0x4c
+
+CMP RD,RA	=> 0x4d
+
+MOV RD,RB	=> 0x4e
+
+ADD RD,RB	=> 0x4f
+
+SUB RD,RB	=> 0x50
+
+AND RD,RB	=> 0x51
+
+OR RD,RB	=> 0x52
+
+XOR RD,RB	=> 0x53
+
+CMP RD,RB	=> 0x54
+
+MOV RD,RC	=> 0x55
+
+ADD RD,RC	=> 0x56
+
+SUB RD,RC	=> 0x57
+
+AND RD,RC	=> 0x58
+
+OR RD,RC	=> 0x59
+
+XOR RD,RC	=> 0x5a
+
+CMP RD,RC	=> 0x5b
+
+MOV RA,#{val}	=> 0x5c @ val[7:0]
+
+ADD RA,#{val}	=> 0x5d @ val[7:0]
+
+SUB RA,#{val}	=> 0x5e @ val[7:0]
+
+AND RA,#{val}	=> 0x5f @ val[7:0]
+
+OR RA,#{val}	=> 0x60 @ val[7:0]
+
+XOR RA,#{val}	=> 0x61 @ val[7:0]
+
+CMP RA,#{val}	=> 0x62 @ val[7:0]
+
+MOV RB,#{val}	=> 0x63 @ val[7:0]
+
+ADD RB,#{val}	=> 0x64 @ val[7:0]
+
+SUB RB,#{val}	=> 0x65 @ val[7:0]
+
+AND RB,#{val}	=> 0x66 @ val[7:0]
+
+OR RB,#{val}	=> 0x67 @ val[7:0]
+
+XOR RB,#{val}	=> 0x68 @ val[7:0]
+
+CMP RB,#{val}	=> 0x69 @ val[7:0]
+
+MOV RC,#{val}	=> 0x6a @ val[7:0]
+
+ADD RC,#{val}	=> 0x6b @ val[7:0]
+
+SUB RC,#{val}	=> 0x6c @ val[7:0]
+
+AND RC,#{val}	=> 0x6d @ val[7:0]
+
+OR RC,#{val}	=> 0x6e @ val[7:0]
+
+XOR RC,#{val}	=> 0x6f @ val[7:0]
+
+CMP RC,#{val}	=> 0x70 @ val[7:0]
+
+MOV RD,#{val}	=> 0x71 @ val[7:0]
+
+ADD RD,#{val}	=> 0x72 @ val[7:0]
+
+SUB RD,#{val}	=> 0x73 @ val[7:0]
+
+AND RD,#{val}	=> 0x74 @ val[7:0]
+
+OR RD,#{val}	=> 0x75 @ val[7:0]
+
+XOR RD,#{val}	=> 0x76 @ val[7:0]
+
+CMP RD,#{val}	=> 0x77 @ val[7:0]
+
+MOV RA,{addr}	=> 0x78 @ val[7:0] @ val[15:8]
+
+MOV {addr},RA	=> 0x79 @ val[7:0] @ val[15:8]
+
+ADD RA,{addr}	=> 0x7a @ val[7:0] @ val[15:8]
+
+SUB RA,{addr}	=> 0x7b @ val[7:0] @ val[15:8]
+
+AND RA,{addr}	=> 0x7c @ val[7:0] @ val[15:8]
+
+OR RA,{addr}	=> 0x7d @ val[7:0] @ val[15:8]
+
+XOR RA,{addr}	=> 0x7e @ val[7:0] @ val[15:8]
+
+CMP RA,{addr}	=> 0x7f @ val[7:0] @ val[15:8]
+
+MOV RB,{addr}	=> 0x80 @ val[7:0] @ val[15:8]
+
+MOV {addr},RB	=> 0x81 @ val[7:0] @ val[15:8]
+
+ADD RB,{addr}	=> 0x82 @ val[7:0] @ val[15:8]
+
+SUB RB,{addr}	=> 0x83 @ val[7:0] @ val[15:8]
+
+AND RB,{addr}	=> 0x84 @ val[7:0] @ val[15:8]
+
+OR RB,{addr}	=> 0x85 @ val[7:0] @ val[15:8]
+
+XOR RB,{addr}	=> 0x86 @ val[7:0] @ val[15:8]
+
+CMP RB,{addr}	=> 0x87 @ val[7:0] @ val[15:8]
+
+MOV RC,{addr}	=> 0x88 @ val[7:0] @ val[15:8]
+
+MOV {addr},RC	=> 0x89 @ val[7:0] @ val[15:8]
+
+ADD RC,{addr}	=> 0x8a @ val[7:0] @ val[15:8]
+
+SUB RC,{addr}	=> 0x8b @ val[7:0] @ val[15:8]
+
+AND RC,{addr}	=> 0x8c @ val[7:0] @ val[15:8]
+
+OR RC,{addr}	=> 0x8d @ val[7:0] @ val[15:8]
+
+XOR RC,{addr}	=> 0x8e @ val[7:0] @ val[15:8]
+
+CMP RC,{addr}	=> 0x8f @ val[7:0] @ val[15:8]
+
+MOV RD,{addr}	=> 0x90 @ val[7:0] @ val[15:8]
+
+MOV {addr},RD	=> 0x91 @ val[7:0] @ val[15:8]
+
+ADD RD,{addr}	=> 0x92 @ val[7:0] @ val[15:8]
+
+SUB RD,{addr}	=> 0x93 @ val[7:0] @ val[15:8]
+
+AND RD,{addr}	=> 0x94 @ val[7:0] @ val[15:8]
+
+OR RD,{addr}	=> 0x95 @ val[7:0] @ val[15:8]
+
+XOR RD,{addr}	=> 0x96 @ val[7:0] @ val[15:8]
+
+CMP RD,{addr}	=> 0x97 @ val[7:0] @ val[15:8]
+
+MOV RA,[RCD]	=> 0x98
+
+MOV [RCD],RA	=> 0x99
+
+ADD RA,[RCD]	=> 0x9a
+
+SUB RA,[RCD]	=> 0x9b
+
+AND RA,[RCD]	=> 0x9c
+
+OR RA,[RCD]	=> 0x9d
+
+XOR RA,[RCD]	=> 0x9e
+
+CMP RA,[RCD]	=> 0x9f
+
+MOV RB,[RCD]	=> 0xa0
+
+MOV [RCD],RB	=> 0xa1
+
+ADD RB,[RCD]	=> 0xa2
+
+SUB RB,[RCD]	=> 0xa3
+
+AND RB,[RCD]	=> 0xa4
+
+OR RB,[RCD]	=> 0xa5
+
+XOR RB,[RCD]	=> 0xa6
+
+CMP RB,[RCD]	=> 0xa7
+
+MOV RC,[RCD]	=> 0xa8
+
+MOV [RCD],RC	=> 0xa9
+
+ADD RC,[RCD]	=> 0xaa
+
+SUB RC,[RCD]	=> 0xab
+
+AND RC,[RCD]	=> 0xac
+
+OR RC,[RCD]	=> 0xad
+
+XOR RC,[RCD]	=> 0xae
+
+CMP RC,[RCD]	=> 0xaf
+
+MOV RD,[RCD]	=> 0xb0
+
+MOV [RCD],RD	=> 0xb1
+
+ADD RD,[RCD]	=> 0xb2
+
+SUB RD,[RCD]	=> 0xb3
+
+AND RD,[RCD]	=> 0xb4
+
+OR RD,[RCD]	=> 0xb5
+
+XOR RD,[RCD]	=> 0xb6
+
+CMP RD,[RCD]	=> 0xb7
+
+OUT RA	=> 0xb8
+
+OUT RB	=> 0xb9
+
+OUT RC	=> 0xba
+
+OUT RD	=> 0xbb
+
+OUT {addr}	=> 0xbc @ val[7:0] @ val[15:8]
+
+OUT [RCD]	=> 0xbd
+
+LSL RA	=> 0xbe
+
+LSL RB	=> 0xbf
+
+LSL RC	=> 0xc0
+
+LSL RD	=> 0xc1
+
+LSL {addr}	=> 0xc2 @ val[7:0] @ val[15:8]
+
+LSL [RCD]	=> 0xc3
+
+LSR RA	=> 0xc4
+
+LSR RB	=> 0xc5
+
+LSR RC	=> 0xc6
+
+LSR RD	=> 0xc7
+
+LSR {addr}	=> 0xc8 @ val[7:0] @ val[15:8]
+
+LSR [RCD]	=> 0xc9
+
+PSH RA	=> 0xca
+
+POP RA	=> 0xcb
+
+PSH RB	=> 0xcc
+
+POP RB	=> 0xcd
+
+PSH RC	=> 0xce
+
+POP RC	=> 0xcf
+
+PSH RD	=> 0xd0
+
+POP RD	=> 0xd1
+
+PSF	=> 0xd2
+
+PPF	=> 0xd3
+
+MOV SP,RCD	=> 0xd4
+
+MOV RCD,SP	=> 0xd5
+
+JMP {addr}	=> 0xd6 @ val[7:0] @ val[15:8]
+
+JSR {addr}	=> 0xd7 @ val[7:0] @ val[15:8]
+
+JCS {addr}	=> 0xd8 @ val[7:0] @ val[15:8]
+
+JZS {addr}	=> 0xd9 @ val[7:0] @ val[15:8]
+
+JNS {addr}	=> 0xda @ val[7:0] @ val[15:8]
+
+JVS {addr}	=> 0xdb @ val[7:0] @ val[15:8]
+
+JNC {addr}	=> 0xdc @ val[7:0] @ val[15:8]
+
+JNZ {addr}	=> 0xdd @ val[7:0] @ val[15:8]
+
+JNN {addr}	=> 0xde @ val[7:0] @ val[15:8]
+
+JNV {addr}	=> 0xdf @ val[7:0] @ val[15:8]
+
+JMP [RCD]	=> 0xe0
+
+JSR [RCD]	=> 0xe1
+
+JCS [RCD]	=> 0xe2
+
+JZS [RCD]	=> 0xe3
+
+JNS [RCD]	=> 0xe4
+
+JVS [RCD]	=> 0xe5
+
+JNC [RCD]	=> 0xe6
+
+JNZ [RCD]	=> 0xe7
+
+JNN [RCD]	=> 0xe8
+
+JNV [RCD]	=> 0xe9
+
+OUT {val},RA	=> 0xea @ v[7:0]
+
+INP RA,{val}	=> 0xeb @ v[7:0]
+
+OUT RB,RA	=> 0xec
+
+INP RA,RB	=> 0xed
+
+MOV RA,{addr},RB	=> 0xee @ val[7:0] @ val[15:8]
+
+MOV RA,[{addr}],RB	=> 0xef @ val[7:0] @ val[15:8]
+MOV {addr},RB,RA	=> 0xf0 @ val[7:0] @ val[15:8]
+MOV [{addr}],RB,RA	=> 0xf1 @ val[7:0] @ val[15:8]
