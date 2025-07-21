@@ -31,7 +31,7 @@ datasheet links
 #define CHIP_DISABLE false // for SST39SF040 chip enable
 
 // ROM chip reference definitions
-#define CURR_ROM_NUM 4    // 0, 1, 2, 3
+#define CURR_ROM_NUM 3    // 0, 1, 2, 3
 #define FIRST_LABEL_ROM 4 // 4, 5
 #define IS_LABEL_ROM (CURR_ROM_NUM >= FIRST_LABEL_ROM) 
 #define IS_MCODE_ROM !IS_LABEL_ROM
@@ -41,44 +41,44 @@ datasheet links
 #define IS_PREDEFINED_LABEL false // variable substitues for 'is_an_opcode'
 
 // microcode ROM 0 Control Lines
-#define _HLT 1                  // halt system clock
-#define _PCE ((uint32_t)1 << 1) // program counter enable
-#define _PCW ((uint32_t)1 << 2) // program counter write
-#define _PCC ((uint32_t)1 << 3) // program counter count
-#define _SPE ((uint32_t)1 << 4) // stack pointer enable
-#define _SPW ((uint32_t)1 << 5) // stack pointer write
-#define _SPD ((uint32_t)1 << 6) // stack pointer direction/decrement (0 = up, 1 = down)
-#define _SPC ((uint32_t)1 << 7) // stack pointer count
+#define _HLT ((uint32_t)1 << 7) // halt system clock
+#define _PCE ((uint32_t)1 << 6) // program counter enable
+#define _PCW ((uint32_t)1 << 5) // program counter write
+#define _PCC ((uint32_t)1 << 4) // program counter count
+#define _SPE ((uint32_t)1 << 3) // stack pointer enable
+#define _SPW 1                  // stack pointer write
+#define _SPD ((uint32_t)1 << 1) // stack pointer direction/decrement (0 = up, 1 = down)
+#define _SPC ((uint32_t)1 << 2) // stack pointer count
 
 // microcode ROM 1 Control Lines
-#define _TRE ((uint32_t)1 << 8)  // transfer register enable
-#define _TLW ((uint32_t)1 << 9)  // transfer lower write
-#define _TUW ((uint32_t)1 << 10) // transfer upper write
-#define _MMW ((uint32_t)1 << 11) // memory write
-#define _CIC ((uint32_t)1 << 12) // control instruction cycle
-#define _CIL ((uint32_t)1 << 13) // control instruction load
-#define _CTI ((uint32_t)1 << 14) // control toggle interrupt
-#define _PSW ((uint32_t)1 << 15) // port selector write
+#define _TRE ((uint32_t)1 << 15) // transfer register enable
+#define _TLW ((uint32_t)1 << 14) // transfer lower write
+#define _TUW ((uint32_t)1 << 13) // transfer upper write
+#define _MMW ((uint32_t)1 << 12) // memory write
+#define _CIC ((uint32_t)1 << 11) // control instruction cycle
+#define _CIL ((uint32_t)1 << 8)  // control instruction load
+#define _CTI ((uint32_t)1 << 9)  // control toggle interrupt
+#define _PSW ((uint32_t)1 << 10) // port selector write
 
 // microcode ROM 2 Control Lines
-#define _PSS ((uint32_t)1 << 16) // port selector selection
-#define _RAW ((uint32_t)1 << 17) // register A write
-#define _RBW ((uint32_t)1 << 18) // register B write
-#define _RCW ((uint32_t)1 << 19) // register C write
-#define _RDW ((uint32_t)1 << 20) // register D write
-#define _OTW ((uint32_t)1 << 21) // register O (output) write
-#define _REW ((uint32_t)1 << 22) // register E (accumulator) write
-#define _RFW ((uint32_t)1 << 23) // register F (flags) write
+#define _PSS ((uint32_t)1 << 23) // port selector selection
+#define _RAW ((uint32_t)1 << 22) // register A write
+#define _RBW ((uint32_t)1 << 21) // register B write
+#define _RCW ((uint32_t)1 << 20) // register C write
+#define _RDW ((uint32_t)1 << 19) // register D write
+#define _OTW ((uint32_t)1 << 16) // register O (output) write
+#define _REW ((uint32_t)1 << 17) // register E (accumulator) write
+#define _RFW ((uint32_t)1 << 18) // register F (flags) write
 
 // microcode ROM 3 Control Lines
-#define _MX0 ((uint32_t)1 << 24) // data bus output MUX control line 0
-#define _MX1 ((uint32_t)1 << 25) // data bus output MUX control line 1
-#define _MX2 ((uint32_t)1 << 26) // data bus output MUX control line 2
-#define _MX3 ((uint32_t)1 << 27) // data bus output MUX control line 3
-#define _AZS ((uint32_t)1 << 28) // ALU control line ZS
-#define _AZ0 ((uint32_t)1 << 29) // ALU control line Z0
-#define _AZ1 ((uint32_t)1 << 30) // ALU control line Z1
-#define _AZ2 ((uint32_t)1 << 31) // ALU control line Z2
+#define _MX0 ((uint32_t)1 << 27) // data bus output MUX control line 0
+#define _MX1 ((uint32_t)1 << 28) // data bus output MUX control line 1
+#define _MX2 ((uint32_t)1 << 29) // data bus output MUX control line 2
+#define _MX3 ((uint32_t)1 << 30) // data bus output MUX control line 3
+#define _AZS ((uint32_t)1 << 31) // ALU control line ZS
+#define _AZ0 ((uint32_t)1 << 24) // ALU control line Z0
+#define _AZ1 ((uint32_t)1 << 25) // ALU control line Z1
+#define _AZ2 ((uint32_t)1 << 26) // ALU control line Z2
 
 // MUX'd data bus output control lines
 #define _PCL ((uint32_t)1 << 24)  // program counter lower byte enable
@@ -149,8 +149,7 @@ void init_ports() {
 }
 
 void set_data_pins_mode(int mode) { // pass in 'INPUT' or 'OUTPUT'
-  for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--)
-  {
+  for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--) {
     pinMode(pin, mode);
   }
 }
@@ -392,7 +391,7 @@ void write_microcode_byte(int address, uint32_t code) { // writes the necessary 
     return; // makes sure we only write to the microcode ROMs
 
   uint32_t inverted = code ^ _negatives;               // inverts all of the active low signals in the control word
-  byte data = (inverted >> (CURR_ROM_NUM * 8)) & 0xFF; // shifts the inverted word to the desired place
+  byte data = (inverted >> (CURR_ROM_NUM * 8)) & 0xFF; // shifts the inverted word to the desired place (LSB to D0)
 
   write_to_AT28C64(address, data);
 }
@@ -566,7 +565,7 @@ void setup() {
   write_microcode_byte(curr_mc_address++, _CTI);                                               // we toggle the interrupt so that it is clear
   write_label_if_flags_clear(_F_II, IS_PREDEFINED_LABEL, predefined_label_0, curr_mc_address); // define the next line as the address for the entry point to predefined label 0 if interrupt inhibit is clear (we don't have to clear interrupt inhibit as it is already clear)
 
-  // initializes program counter from 0xFFFC in memory(reset vector address hardcoded in ROM)
+  // initializes program counter from 0xFFFC in memory (reset vector address hardcoded in ROM)
    /*TODO: write this in ROM*/
   write_microcode_byte(curr_mc_address++, _ALU_xFF | _REW);               // write 0xFF to E reg.
   write_microcode_byte(curr_mc_address++, _FLG_CLC | _RFW);               // clear carry for shift

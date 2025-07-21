@@ -1,6 +1,7 @@
 /*
 =============================================================================
 IMPORTANT!!! this program writes to a AT28C64B! not the AT28C64 cuz I accidentally got the B version, its more complicated to implement grrrr :(
+datasheet: https://ww1.microchip.com/downloads/en/DeviceDoc/doc0270.pdf
 
 
 Code that writes a AT28C64B EEPROM driving a 4-digit 7-segment display output via th 74HC595 shift register
@@ -136,8 +137,8 @@ ex:
 set_eeprom_address(1234, true) --> 00000100 11010010 --> 10000100 11010010 outputed 
 */
 void set_eeprom_address(int address, bool output_enable) { //
-  shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, (address >> 8) | (output_enable ? 0x00 : 0x80)); // shift out bits ahead of the first 8 bits (presumeably less than 8 bits); sets msb high if 'output_enable' is true, else sets the msb false
-  shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, address);         // shift out last 8 bits
+  shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, (address >> 8) | (output_enable ? 0x00 : 0x80)); // shift out upper byte (presumeably less than 8 bits); sets msb high if 'output_enable' is true, else sets the msb false
+  shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, address);                                        // shift out lower byte
 
   digitalWrite(SHIFT_LATCH, LOW);
   digitalWrite(SHIFT_LATCH, HIGH);
@@ -156,7 +157,24 @@ byte read_from_eeprom(int address) {
   return data;
 }
 
+int reverse_lower_address_byte(int address) { // i wired the data lines to the eeprom backwards so im deciding to fix the issue in software smh
+  byte address_byte  = address & 0x00FF;
+
+  byte reversed_byte = 0;
+  for (int i = 0; i < 8; i++) {
+    reversed_byte <<= 1;
+    reversed_byte |= (address_byte & 1);
+    address_byte >>= 1;
+  }
+
+  return (address & 0xFF00) | reversed_byte;
+}
+
 void write_to_eeprom(int address, byte data) {
+  address = reverse_lower_address_byte(address);
+
+  enable_sdp();
+  
   set_data_pins_mode(OUTPUT); // we are sending data out of the data pins
   set_eeprom_address(address, WRITE);
   
@@ -169,22 +187,14 @@ void write_to_eeprom(int address, byte data) {
   delayMicroseconds(1);
   digitalWrite(WRITE_ENABLE, HIGH);
 
-  // error checking
-  byte l = read_from_eeprom(address);
-  int cnt = 1000;
-  while ((cnt > 0) && (l != data)) {
-    cnt--;
-    if (address == 0)
-      l = read_from_eeprom(256);
-    else 
-      l = read_from_eeprom(0);
-    l = read_from_eeprom(address);
-  }
+  delayMicroseconds(10000); // need hella long delay because the at28c64b is special
 
-  if (cnt == 0){
-    char buf[80];
-    sprintf(buf, "\r\nWRITE ERROR on %04x! (%02x %02x)\r\n", address, data, l);
-    Serial.println(buf);
+  byte read_back = read_from_eeprom(address);
+
+  if (read_back != data){
+    char buffer[80];
+    sprintf(buffer, "\r\nWRITE ERROR on 0x%04x! (want: %02x, read: %02x)\r\n", address, data, read_back);
+    Serial.println(buffer);
   }
 
 }
@@ -207,6 +217,39 @@ void print_byte_from_eeprom(int base_address) { // prints the next 255 addresses
   }
 }
 
+void raw_write(int address, byte data) {
+  set_data_pins_mode(OUTPUT);
+  set_eeprom_address(address, WRITE);
+
+  byte curr_data = data;
+  for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--) {
+    digitalWrite(pin, curr_data & 0x80);
+    curr_data = curr_data << 1;
+  }
+
+  digitalWrite(WRITE_ENABLE, LOW);
+  delayMicroseconds(20);
+  digitalWrite(WRITE_ENABLE, HIGH);
+  delay(20); // wait full write cycle (tWC in datasheet) (even if data isn't stored)
+}
+
+void enable_sdp() { // enable software data protection for at28c64b
+  raw_write(0x1555, 0xAA);
+  raw_write(0x0AAA, 0x55);
+  raw_write(0x1555, 0xA0);
+
+}
+
+void disable_sdp() { // disable software data protection for at28c64b
+  // disable sdp software code
+  raw_write(0x1555, 0xAA);
+  raw_write(0x0AAA, 0x55);
+  raw_write(0x1555, 0x80);
+  raw_write(0x1555, 0xAA);
+  raw_write(0x0AAA, 0x55);
+  raw_write(0x1555, 0x20);
+}
+
 // helper functions
 int get_converted_decimal(int num) { // for getting digits of a signed decimal; pass in an 8-bit int
   int converted_decimal = num;
@@ -215,6 +258,7 @@ int get_converted_decimal(int num) { // for getting digits of a signed decimal; 
   }
   return converted_decimal;
 }
+
 
 void setup() {
   // initializing stuff
@@ -232,15 +276,15 @@ void setup() {
   ===========================
   */
 
+  int base_address = 0;
+
   /* writing symbols for unsigned mode */
 
   Serial.println("writing decimal unsigned 1st digit ");
-  int base_address = 0;
   for (int i = 0; i <= 255; i++) {
     int ones = i % 10;
     write_to_eeprom(base_address + i, symbols_bytes[ones]);
   }
-  print_byte_from_eeprom(base_address);
 
   Serial.println("writing decimal unsigned 2nd digit ");
   base_address += 256;
@@ -248,7 +292,6 @@ void setup() {
     int tens = (i / 10) % 10;
     write_to_eeprom(base_address + i, symbols_bytes[tens]);
   }
-  print_byte_from_eeprom(base_address);
 
   Serial.println("writing decimal unsigned 3rd digit ");
   base_address += 256;
@@ -256,15 +299,12 @@ void setup() {
     int hundreds = (i / 100) % 10;
     write_to_eeprom(base_address + i, symbols_bytes[hundreds]);
   }
-  print_byte_from_eeprom(base_address);
   
   Serial.println("writing decimal unsigned 4th digit (no digit)");
   base_address += 256;
   for (int i = 0; i <= 255; i++) {
     write_to_eeprom(base_address + i, 0);
   }
-  print_byte_from_eeprom(base_address);
-
 
   // writing symbols for signed mode
 
@@ -274,7 +314,6 @@ void setup() {
     int ones = get_converted_decimal(i) % 10;
     write_to_eeprom(base_address + i, symbols_bytes[ones]);
   }
-  print_byte_from_eeprom(base_address);
 
   Serial.println("writing decimal signed 2nd digit");
   base_address += 256;
@@ -282,7 +321,6 @@ void setup() {
     int tens = (get_converted_decimal(i) / 10) % 10;
     write_to_eeprom(base_address + i, symbols_bytes[tens]);
   }
-  print_byte_from_eeprom(base_address);
 
   Serial.println("writing decimal signed 3rd digit");
   base_address += 256;
@@ -290,7 +328,6 @@ void setup() {
     int hundreds = (get_converted_decimal(i) / 100) % 10;
     write_to_eeprom(base_address + i, symbols_bytes[hundreds]);
   }
-  print_byte_from_eeprom(base_address);
 
   Serial.println("writing decimal signed 4th digit (maybe a sign)");
   base_address += 256;
@@ -298,7 +335,6 @@ void setup() {
     bool yes_sign = i > 127;
     write_to_eeprom(base_address + i, yes_sign ? symbols_bytes[SIGN_DIGIT] : 0);
   }
-  print_byte_from_eeprom(base_address);
 
 
   // writing symbols for hexidecimal mode
@@ -308,7 +344,6 @@ void setup() {
   for (int i = 0; i <= 255; i++) {
     write_to_eeprom(base_address + i, symbols_bytes[HEX_DIGIT]);
   }
-  print_byte_from_eeprom(base_address);
 
   Serial.println("writing hexadecimal 2nd digit");
   base_address += 256;
@@ -316,7 +351,6 @@ void setup() {
     int ones = i % 16;
     write_to_eeprom(base_address + i, symbols_bytes[ones]);
   }
-  print_byte_from_eeprom(base_address);
 
   Serial.println("writing hexadecimal 3rd digit");
   base_address += 256;
@@ -324,14 +358,12 @@ void setup() {
     int sixteenths = i / 16;
     write_to_eeprom(base_address + i, symbols_bytes[sixteenths]);
   }
-  print_byte_from_eeprom(base_address);
   
   Serial.println("writing hexadecimal 4th digit (no digit)");
   base_address += 256;
   for (int i = 0; i <= 255; i++) {
     write_to_eeprom(base_address + i, 0);
   }
-  print_byte_from_eeprom(base_address);
 
 
   // writing symbols for binary mode
@@ -342,7 +374,6 @@ void setup() {
     int first_two_bits = i & 3;
     write_to_eeprom(base_address + i, symbols_bytes[first_two_bits + BIN_OFFSET]);
   }
-  print_byte_from_eeprom(base_address);
   
   Serial.println("writing binary 2nd digit");
   base_address += 256;
@@ -350,7 +381,6 @@ void setup() {
     int second_two_bits = (i >> 2) & 3;
     write_to_eeprom(base_address + i, symbols_bytes[second_two_bits + BIN_OFFSET]);
   }
-  print_byte_from_eeprom(base_address);
   
   Serial.println("writing binary 3rd digit");
   base_address += 256;
@@ -358,15 +388,13 @@ void setup() {
     int third_two_bits = (i >> 4) & 3;
     write_to_eeprom(base_address + i, symbols_bytes[third_two_bits + BIN_OFFSET]);
   }
-  print_byte_from_eeprom(base_address);
-  
-  Serial.println("writing binary 3rd digit");
+
+  Serial.println("writing binary 4th digit");
   base_address += 256;
   for (int i = 0; i <= 255; i++) {
     int fourth_two_bits = (i >> 6) & 3;
     write_to_eeprom(base_address + i, symbols_bytes[fourth_two_bits + BIN_OFFSET]);
   }
-  print_byte_from_eeprom(base_address);
   
 
   // 
@@ -377,29 +405,6 @@ void setup() {
   Serial.println(buf);
   Serial.println("done.");
 }
-
-// void setup() {
-//   init_pins();
-//   Serial.begin(57600);
-//   Serial.println("testing ");
-
-//   print_byte_from_eeprom(0);
-//   for (int i = 0; i < 256; i ++) {
-//     write_to_eeprom(i, 0);
-//   }
-//   print_byte_from_eeprom(0);
-
-//   // byte* symbols_bytes = get_symbol_bytes();
-//   // for (int i = 0; i < 22; i ++){
-//   //   Serial.println(symbols_bytes[i]);
-//   // }
-
-//   // int base_address = 0;
-//   // for (int i = 0; i < 16; i ++) {
-//   //   print_byte_from_eeprom(i * 256 + base_address);
-//   //   Serial.println(i);
-//   // }
-// }
 
 void loop() {
   // put your main code here, to run repeatedly:

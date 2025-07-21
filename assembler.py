@@ -1,6 +1,14 @@
-import re
+"""
+custom assembler for the hippo8
+
+help from Slu4 for giving ideas for the procedure
+- https://www.youtube.com/watch?v=rdKX9hzA2lU
+"""
+
+
 import sys
 import os
+import re
 
 def get_instruction_to_opcode() -> dict: # converts and returns the serial outs of 'hippo8_microcode.ino' into a dictionary
     with open("opcodes_from_arduino.txt") as f:
@@ -21,7 +29,7 @@ def get_instruction_to_opcode() -> dict: # converts and returns the serial outs 
 
         instruction_to_opcode[instruction] = {
             "opcode":     int(opcode, 0),
-            "operand_type": ["none", "imm8", "imm16"][num_params]
+            "operand_type": ["none", "imm8", "addr16"][num_params]
         }
 
     return instruction_to_opcode
@@ -162,7 +170,7 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
                 raise ValueError(f"unknown operand: '{arg}' in '{line}'")
             instruction_key = f"{instruction_name} {operand}"
         case 2:
-            arg1, arg2 = instruction_args[0], tokens[1]
+            arg1, arg2 = instruction_args[0], instruction_args[1]
             operands   = ''
 
             # R, R
@@ -221,7 +229,7 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
     
     instruction = OPCODES.get(instruction_key)
     if not instruction:
-        raise ValueError(f"unknown instruction: {line}")
+        raise ValueError(f"unknown instruction: {instruction_key}")
 
     opcode, operand_type = instruction["opcode"], instruction["operand_type"]
     match operand_type:
@@ -275,9 +283,35 @@ def main() -> None:
         with open(sys.argv[1]) as f:
             lines = f.readlines()                # list 'lines' contains all of the lines from the source file
         bytecode = assemble(lines)
-        with open("out.hex", "w") as out:
-            out.write(' '.join(f'0x{byte:02X}' for byte in bytecode))
+
+        # we format the output so its easy to program in Arduino
+        bytecode_formatted = []
+
+        curr_line = ''
+        for address, byte in enumerate(bytecode):
+            if address % 16 == 0:                          # header every 16 bytes with the address
+                curr_line = f"/* 0x{address:04x} */"
+            
+            curr_line     += f" 0x{byte:02x},"
+            is_end_of_line = (address % 16 == 15)
+            is_last_byte   = (address == len(bytecode) - 1)
+
+            if is_last_byte:                               # if this is the last line, we remove the trailing comma
+                bytecode_formatted.append(curr_line[:-1])  # add the byte line to output
+                break
+
+            if is_end_of_line:
+                curr_line += f'\n'                         # adds a return when we get to the end of 16 bytes      
+                bytecode_formatted.append(curr_line)       # add the byte line to output
+
+        # we write the data to out.hex to be pasted into and programmed in Arduino!
+        file_name = sys.argv[1].rstrip('.asm')
+        with open(f"{file_name}.hex", "w") as out:
+            for line in bytecode_formatted:
+                out.write(line)
         print("completed! assembled to out.hex")
+        for line in bytecode_formatted:
+            print(line)
 
 if __name__ == "__main__":
     main()
