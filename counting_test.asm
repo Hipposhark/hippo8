@@ -1,13 +1,17 @@
 .include "macros.asm" ; include "macros.asm"
 
-MOV RA, #0
+MOV RA, #5
 CLC
 
-LOOPUP: OUT RA
+LOOPUP: 
+        OUT RA
         INC RA
         JNC LOOPUP
+        CLC
+        JMP LOOPDN
 
-LOOPDN: OUT RA
+LOOPDN: 
+        OUT RA
         DEC RA
         JNZ LOOPDN
         JMP LOOPUP

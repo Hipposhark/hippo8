@@ -31,13 +31,13 @@ datasheet links
 #define CHIP_DISABLE false // for SST39SF040 chip enable
 
 // ROM chip reference definitions
-#define CURR_ROM_NUM 3    // 0, 1, 2, 3
+#define CURR_ROM_NUM    2 // 0, 1, 2, 3
 #define FIRST_LABEL_ROM 4 // 4, 5
 #define IS_LABEL_ROM (CURR_ROM_NUM >= FIRST_LABEL_ROM) 
 #define IS_MCODE_ROM !IS_LABEL_ROM
 
 // 'write_label_byte' variable substitutes
-#define IS_OPCODE true            // variable substitues for 'is_an_opcode'
+#define IS_OPCODE            true // variable substitues for 'is_an_opcode'
 #define IS_PREDEFINED_LABEL false // variable substitues for 'is_an_opcode'
 
 // microcode ROM 0 Control Lines
@@ -81,21 +81,21 @@ datasheet links
 #define _AZ2 ((uint32_t)1 << 26) // ALU control line Z2
 
 // MUX'd data bus output control lines
-#define _PCL ((uint32_t)1 << 24)  // program counter lower byte enable
-#define _PCU ((uint32_t)2 << 24)  // program counter upper byte enable
-#define _SPL ((uint32_t)3 << 24)  // stack pointer upper byte enable
-#define _SPU ((uint32_t)4 << 24)  // stack pointer lower byte enable
-#define _TRL ((uint32_t)5 << 24)  // transfer register lower byte enable
-#define _TRU ((uint32_t)6 << 24)  // transfer register upper byte enable
-#define _MME ((uint32_t)7 << 24)  // memory enable
-#define _PSE ((uint32_t)8 << 24)  // port selector enable
-#define _RAE ((uint32_t)9 << 24)  // register A enable
-#define _RBE ((uint32_t)10 << 24) // register B enable
-#define _RCE ((uint32_t)11 << 24) // register C enable
-#define _RDE ((uint32_t)12 << 24) // register D enable
-#define _REE ((uint32_t)13 << 24) // register E (accumulator) enable
-#define _RFE ((uint32_t)14 << 24) // register F (flags) enable
-// #define  ((uint32_t)15 << 24)
+#define _PCL ((uint32_t)1  << 27) // program counter lower byte enable
+#define _PCU ((uint32_t)2  << 27) // program counter upper byte enable
+#define _SPL ((uint32_t)3  << 27) // stack pointer upper byte enable
+#define _SPU ((uint32_t)4  << 27) // stack pointer lower byte enable
+#define _TRL ((uint32_t)5  << 27) // transfer register lower byte enable
+#define _TRU ((uint32_t)6  << 27) // transfer register upper byte enable
+#define _MME ((uint32_t)7  << 27) // memory enable
+#define _PSE ((uint32_t)8  << 27) // port selector enable
+#define _RAE ((uint32_t)9  << 27) // register A enable
+#define _RBE ((uint32_t)10 << 27) // register B enable
+#define _RCE ((uint32_t)11 << 27) // register C enable
+#define _RDE ((uint32_t)12 << 27) // register D enable
+#define _REE ((uint32_t)13 << 27) // register E (accumulator) enable
+#define _RFE ((uint32_t)14 << 27) // register F (flags) enable
+// #define  ((uint32_t)15 << 27)
 
 // ALU related control lines (if _REW is active)
 #define _ALU_x00 ((uint32_t)0)          // load (x00) into reg. E
@@ -125,9 +125,9 @@ datasheet links
 #define _F_IF ((int)64) // 1 = instruction fetch
 
 // creates the active low control lines bitfield
-#define _negatives (_PCE | _PCW | _PCC | _SPE | _SPC | _TRE | _TLW | _TUW | _MMW | _CIC | _CIL | _PSW | _PSS | _RAW | _RBW | _RCW | _RDW | _REW | _RFW)
+#define _negatives (_PCE | _PCW | _SPE | _SPC | _TRE | _TLW | _TUW | _MMW | _CIC | _CIL | _PSW | _PSS | _RAW | _RBW | _RCW | _RDW | _OTW | _REW | _RFW)
 
-int fetch_address = 0;     // define start address of the fetch cycle microcode
+int fetch_address     = 0; // define start address of the fetch cycle microcode
 int interrupt_address = 0; // define start address of the intterupt routine microcode
 
 // register arrays, used to create register related microcode via loops
@@ -310,41 +310,113 @@ void set_AT28C64_address(int address, boolean is_output_enabled) {
   digitalWrite(SHIFT_LATCH, LOW);
 }
 
+void raw_write(int address, byte data) {
+  set_data_pins_mode(OUTPUT);
+  set_AT28C64_address(address, WRITE);
+
+  byte curr_data = data;
+  for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--) {
+    digitalWrite(pin, curr_data & 0x80);
+    curr_data = curr_data << 1;
+  }
+
+  digitalWrite(WRITE_ENABLE, LOW);
+  delayMicroseconds(20);
+  digitalWrite(WRITE_ENABLE, HIGH);
+  delay(20); // wait full write cycle (tWC in datasheet) (even if data isn't stored)
+}
+
+void enable_sdp_AT28C64() { // enable software data protection for at28c64b
+  raw_write(0x1555, 0xAA);
+  raw_write(0x0AAA, 0x55);
+  raw_write(0x1555, 0xA0);
+}
+
+void enable_sdp_AT28C256() { // enable software data protection for at28c256
+  raw_write(0x5555, 0xAA);
+  raw_write(0x2AAA, 0x55);
+  raw_write(0x5555, 0xA0);
+}
+
+
 void write_to_AT28C64(int address, byte data) {
   byte data_read = read_from_AT28C64(address);
+
   if (data_read != data) {
+    // enable_sdp_AT28C64();
+    enable_sdp_AT28C256();
     set_data_pins_mode(OUTPUT);
     set_AT28C64_address(address, WRITE);
 
     byte curr_data = data;
     for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--) {
       digitalWrite(pin, curr_data & 0x80);
+
+      // char buffer[80];
+      // byte bit = (curr_data & 0x80) ? 1 : 0;
+      // sprintf(buffer, "Pin %d ← %d\n", pin, bit);
+      // Serial.println(buffer);
+
       curr_data <<= 1;
     }
 
     digitalWrite(WRITE_ENABLE, LOW);
-    delayMicroseconds(200);
+    delayMicroseconds(1);
     digitalWrite(WRITE_ENABLE, HIGH);
+    delayMicroseconds(1000);
+
+
+    // Immediately after write pulse
+    byte read_back;
+    unsigned long start_checking_time = millis();
+    unsigned long time_passed         = 0;
+    unsigned long curr_time;
+    int           time_spent_checking = 0;
+    
+    do {
+      read_back = read_from_AT28C64(address);
+
+      curr_time = millis();
+      time_spent_checking = (curr_time - start_checking_time) / 1000;
+      if (time_spent_checking > time_passed) {
+        time_passed = time_spent_checking;
+        Serial.print(".");
+      }
+
+    } while ((read_back & 0x80) != (data & 0x80));  // Polling bit 7
+
+    if (time_passed > 1) {
+      Serial.println("");
+    }
 
     // error checking
-    byte l = read_from_AT28C64(address);
-    int cnt = 1000;
-    while ((cnt > 0) && (l != data)) {
-      cnt--;
-      if ((address & 0xff) == 0)
-        l = read_from_AT28C64(address + 1);
-      else
-        l = read_from_AT28C64(address - 1);
-      l = read_from_AT28C64(address);
-    }
-    if (l != data) {
-      char buf[60];
-      sprintf(buf, "\r\nWRITE ERROR on %04x! (%02x %02x)\r\n", address, data, l);
-      Serial.println(buf);
-      num_write_errors++;
-    }
+    // byte read_back = read_from_AT28C64(address);
+
+    // if (read_back != data){
+    //   char buffer[80];
+    //   sprintf(buffer, "\r\nWRITE ERROR on 0x%04x! (want: %02x, read: %02x)\r\n", address, data, read_back);
+    //   Serial.println(buffer);
+    // }
+
+    // byte l = read_from_AT28C64(address);
+    // int cnt = 1000;
+    // while ((cnt > 0) && (l != data)) {
+    //   cnt--;
+    //   if ((address & 0xff) == 0)
+    //     l = read_from_AT28C64(address + 1);
+    //   else
+    //     l = read_from_AT28C64(address - 1);
+    //   l = read_from_AT28C64(address);
+    // }
+    // if (l != data) {
+    //   char buf[60];
+    //   sprintf(buf, "\r\nWRITE ERROR on %04x! (want: %02x, read: %02x)\r\n", address, data, l);
+    //   Serial.println(buf);
+    //   num_write_errors++;
+    // }
   }
 }
+
 
 byte read_from_AT28C64(int address) {
   set_data_pins_mode(INPUT);
@@ -386,12 +458,24 @@ uint32_t _goto(int label_number) { // returns the formatted control word for a p
 
 /* defining core functions */
 
+const int MAX_ADDRESS = 0x10;
+uint32_t microcode_data[MAX_ADDRESS];
+
 void write_microcode_byte(int address, uint32_t code) { // writes the necessary control line outputs to a microcode ROM given the the address and active control word signals
   if (!IS_MCODE_ROM)
     return; // makes sure we only write to the microcode ROMs
 
   uint32_t inverted = code ^ _negatives;               // inverts all of the active low signals in the control word
+
+  if (address < MAX_ADDRESS) {
+    microcode_data[address] = inverted;
+    char buffer[80];
+    sprintf(buffer, "address 0x%04x should get data: %08x", address, code);
+    Serial.println(buffer);
+  }
+
   byte data = (inverted >> (CURR_ROM_NUM * 8)) & 0xFF; // shifts the inverted word to the desired place (LSB to D0)
+
 
   write_to_AT28C64(address, data);
 }
@@ -508,33 +592,31 @@ void print_curr_instruction(char* curr_instruction_name, int curr_instruction_op
 // void setup() {
 //   Serial.begin(57600);
 //   init_ports();
+//   char buffer[80];
+//   Serial.println("\nTESTING!");
   
 //   // if (IS_LABEL_ROM) {
 //   //   Serial.println(F("Erasing Chip..."));
 //   //   erase_SST39SF040();
 //   // }
+//   print_256_bytes_from_AT28C64(0);
 
-//   Serial.println(F("printing..."));
-//   // print_256_bytes_from_AT28C64(0); 
-//   for (int i=0; i<256; i++) {
-//     print_256_bytes_from_SST39SF040(i*256);
-//   }
-//   // print_256_bytes_from_SST39SF040(0);
+//     // int test_address = 0x08;
+//     // byte test_data   = 0x00;
 
-
-//   // set_SST39SF040_address(0x00000, READ, CHIP_ENABLE);
-//   // set_SST39SF040_address(0x10, READ, CHIP_ENABLE);
-//   // byte data = read_from_SST39SF040(0x10);
-//   // // Serial.println(data);
+//     // write_to_AT28C64(test_address, 0xFF);
+//     // Serial.println  (read_from_AT28C64(test_address));
+//     // write_to_AT28C64(test_address, test_data);
+//     // Serial.println  (read_from_AT28C64(test_address));
+//     // print_256_bytes_from_AT28C64(0);
 // }
 
 void setup() {
   /* initialization steps */
-  // Serial.begin(9600);
   Serial.begin(57600);
 
   char buffer[80];
-  sprintf(buffer, "Begin writing to ROM #%d", CURR_ROM_NUM);
+  sprintf(buffer, "\nBegin writing to ROM #%d", CURR_ROM_NUM);
   Serial.println(buffer);
 
   init_ports();
@@ -551,51 +633,50 @@ void setup() {
   BEHOLD THE HOLY MICROCODE
   */
 
-  int curr_mc_address  = 0;
+  int curr_mc_address         = 0;
   int curr_instruction_opcode = 0;
 
   /* reset logic code */
-  write_microcode_byte(curr_mc_address++, 0x00); // noop (this is the reset entry point)
+  write_microcode_byte(curr_mc_address++, 0x00); // (0) noop (this is the reset entry point)
 
   // ensure interrupt inhibited: basically we jump to an address to toggle _II if it is set, and we jump past that address if _II is not set
   int predefined_label_0 = 0;
-  write_microcode_byte(curr_mc_address++, _goto(predefined_label_0));                          // we jump to predefined label 0
+  write_microcode_byte(curr_mc_address++, _goto(predefined_label_0));                          // (1) we jump to predefined label 0
   write_label_if_flags_set(_F_II, IS_PREDEFINED_LABEL, predefined_label_0, curr_mc_address);   // define the next line as the address for the entry point to predefined label 0 if interrupt inhibit is set
 
-  write_microcode_byte(curr_mc_address++, _CTI);                                               // we toggle the interrupt so that it is clear
+  write_microcode_byte(curr_mc_address++, _CTI);                                               // (2) we toggle the interrupt so that it is clear
   write_label_if_flags_clear(_F_II, IS_PREDEFINED_LABEL, predefined_label_0, curr_mc_address); // define the next line as the address for the entry point to predefined label 0 if interrupt inhibit is clear (we don't have to clear interrupt inhibit as it is already clear)
 
-  // initializes program counter from 0xFFFC in memory (reset vector address hardcoded in ROM)
-   /*TODO: write this in ROM*/
-  write_microcode_byte(curr_mc_address++, _ALU_xFF | _REW);               // write 0xFF to E reg.
-  write_microcode_byte(curr_mc_address++, _FLG_CLC | _RFW);               // clear carry for shift
-  write_microcode_byte(curr_mc_address++, _REE | _TUW | _ALU_LSL | _REW); // we write 0xFF to transfer reg's high byte, and then left shift and write E reg. so it contains 0xFE
-  write_microcode_byte(curr_mc_address++, _REE | _ALU_LSL | _REW);        // we shift E reg. so it contains 0xFC
-  write_microcode_byte(curr_mc_address++, _REE | _TLW);                   // write 0xFC to transfer reg's low byte
-  write_microcode_byte(curr_mc_address++, _TRE | _MME | _RCW);            // we address into memory 0xFFFC and output data byte into C reg.
+  // initializes program counter from 0xFFFC in memory: [0xFFFC] -> PC (reset vector address hardcoded in ROM)
+  write_microcode_byte(curr_mc_address++, _ALU_xFF | _REW);               // (3) write 0xFF to E reg.
+  write_microcode_byte(curr_mc_address++, _FLG_CLC | _RFW);               // (4) clear carry for shift
+  write_microcode_byte(curr_mc_address++, _REE | _TUW | _ALU_LSL | _REW); // (5) we write 0xFF to transfer reg's high byte, and then left shift and write E reg. so it contains 0xFE
+  write_microcode_byte(curr_mc_address++, _REE | _ALU_LSL | _REW);        // (6) we shift E reg. so it contains 0xFC
+  write_microcode_byte(curr_mc_address++, _REE | _TLW);                   // (7) write 0xFC to transfer reg's low byte
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _RCW);            // (8) we address into memory 0xFFFC and output data byte into C reg.
 
-  write_microcode_byte(curr_mc_address++, _ALU_xFF | _REW);               // write 0xFF to E reg.
-  write_microcode_byte(curr_mc_address++, _FLG_CLC | _RFW);               // clear carry for shift
-  write_microcode_byte(curr_mc_address++, _REE | _ALU_LSL | _REW | _RFW); // we left shift and write E reg. so it contains 0xFE, enable flag so carry is set
-  write_microcode_byte(curr_mc_address++, _REE | _ALU_LSL | _REW);        // we left shift and write E reg. so it contains 0xFD (carry flag from previous line shifts into the byte)
-  write_microcode_byte(curr_mc_address++, _REE | _TRL);                   // write 0xFD to transfer register's low byte
-  write_microcode_byte(curr_mc_address++, _TRE | _MME | _RDW);            // we address into memory 0xFFFD and output data byte into D reg.
+  write_microcode_byte(curr_mc_address++, _ALU_xFF | _REW);               // (9)  write 0xFF to E reg.
+  write_microcode_byte(curr_mc_address++, _FLG_CLC | _RFW);               // (10) clear carry for shift
+  write_microcode_byte(curr_mc_address++, _REE | _ALU_LSL | _REW | _RFW); // (11) we left shift and write E reg. so it contains 0xFE, enable flag so carry is set
+  write_microcode_byte(curr_mc_address++, _REE | _ALU_LSL | _REW);        // (12) we left shift and write E reg. so it contains 0xFD (carry flag from previous line shifts into the byte)
+  write_microcode_byte(curr_mc_address++, _REE | _TLW);                   // (13) write 0xFD to transfer register's low byte
+  write_microcode_byte(curr_mc_address++, _TRE | _MME | _RDW);            // (14) we address into memory 0xFFFD and output data byte into D reg.
 
-  write_microcode_byte(curr_mc_address++, _RDE | _TRU); // write D reg. to transfer register's high byte
-  write_microcode_byte(curr_mc_address++, _RCE | _TRL); // write C reg. to transfer register's low  byte 
-  write_microcode_byte(curr_mc_address++, _TRE | _PCW); // write transfer register into program counter
+  write_microcode_byte(curr_mc_address++, _RDE | _TUW); // (15) write D reg. to transfer register's high byte
+  write_microcode_byte(curr_mc_address++, _RCE | _TLW); // (16) write C reg. to transfer register's low  byte 
+  write_microcode_byte(curr_mc_address++, _TRE | _PCW); // (17) write transfer register into program counter
 
   // initialize registers to zero
-  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);                                       // write x00   to E reg.
-  write_microcode_byte(curr_mc_address++, _REE | _TLW | _TUW | _RAW | _RBW | _RCW | _RDW | _OTW); // write x0000 to transfer reg. and x00 to regs. A, B, C, D, and O
-  write_microcode_byte(curr_mc_address++, _SPW | _TRE);                                           // write x0000 to stack pointer
-  write_microcode_byte(curr_mc_address++, _SPD | _SPC);                                           // count down once so stack pointer contains xFFFF
-  write_microcode_byte(curr_mc_address++, _REE | _FLG_BUS | _RFW | _CIC);                         // clears flags register to x0
+  write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);                                       // (18) write x00   to E reg.
+  write_microcode_byte(curr_mc_address++, _REE | _TLW | _TUW | _RAW | _RBW | _RCW | _RDW | _OTW); // (19) write x0000 to transfer reg. and x00 to regs. A, B, C, D, and O
+  write_microcode_byte(curr_mc_address++, _SPW | _TRE);                                           // (20) write x0000 to stack pointer
+  write_microcode_byte(curr_mc_address++, _SPD | _SPC);                                           // (21) count down once so stack pointer contains xFFFF
+  write_microcode_byte(curr_mc_address++, _REE | _FLG_BUS | _RFW | _CIC);                         // (22) clears flags register to x0
   // now we fall to fetch code (_CIC is set)
 
   /* fetch code */
   fetch_address = curr_mc_address;
-  write_microcode_byte(curr_mc_address++, _PCE | _PCC | _MME | _CIC | _CIL);
+  write_microcode_byte(curr_mc_address++, _PCE | _PCC | _MME | _CIC | _CIL); // (23)
 
   /* interrupt routine code */
   /* 
@@ -1373,7 +1454,7 @@ void setup() {
 
 
   /* set unused op codes to HLT */
-  Serial.println(F("Writing unsused codes"));
+  Serial.println(F("Writing unused codes"));
 
   write_microcode_byte(curr_mc_address, _HLT);
   while (curr_instruction_opcode < 256) {
@@ -1386,9 +1467,18 @@ void setup() {
   if (IS_MCODE_ROM) {
     print_256_bytes_from_AT28C64(0); // just checking if things are changing
 
+    for (int addr = 0; addr < MAX_ADDRESS; addr ++) {
+      char buffer[80];
+      sprintf(buffer, "address 0x%04x should get data: %04x", addr, microcode_data[addr]);
+      Serial.println(buffer);
+    }
+
   } else {
     print_256_bytes_from_SST39SF040(0);
   }
+
+  sprintf(buffer, "fetch code start address at: 0x%04x", fetch_address);
+  Serial.println(buffer);
 
   unsigned long stop_time = millis();
   int time_spent = (stop_time - start_time) / 1000;

@@ -119,15 +119,37 @@ def get_instruction_size(line: str) -> int: # returns the number of bytes the cu
         num_bytes = 2                                # instruction (1 byte) + imm8 (1 byte) = 2 bytes
     elif re.search(r"\b0x[0-9a-fA-F]{1,4}\b", line): # detects addr16 parameter
         num_bytes = 3                                # instruction (1 byte) + addr16 (2 bytes) =  3 bytes
-    return num_bytes
+    # num_bytes = 1
+    # curr_instruction_mneomonic = line.split()[0]
+    # for instruction, instruction_details in OPCODES.items():
+    #     curr_operand_type                   = instruction_details["operand_type"]
+    #     instruction_mneomonic_being_checked = instruction.split()[0]
+    #     match curr_operand_type:
+    #         case "none":
+    #             if curr_instruction_mneomonic == instruction_mneomonic_being_checked:
+    #                 num_bytes = 1
+    #         case "imm8":
+    #             if curr_instruction_mneomonic == instruction_mneomonic_being_checked:
+    #                 num_bytes = 2
+    #         case "addr16":
+    #             if curr_instruction_mneomonic == instruction_mneomonic_being_checked:
+    #                 num_bytes = 3
     
+    curr_instruction_mneomonic = line.split()[0]
+    if curr_instruction_mneomonic[0] == 'J': # detects a jump instruction
+        num_bytes = 3
+
+    print(f"line: {line} \t; {num_bytes}")
+    return num_bytes
+
+BASE_ADDRESS = 0xE000 # the address where program data starts in memory
 def extract_labels(lines: list) -> tuple: # catalogs and removes label definitions
-    labels              = {} # catalogs label definitions
-    address             = 0  # tracks our position in memory
+    labels              = {}            # catalogs label definitions
+    address             = BASE_ADDRESS  # tracks our position in memory
     lines_no_label_defs = []
     
     for line in lines:
-        label_match = re.match(r"(\w+):", line)
+        label_match = re.match(r"(\w+):", line) # searches for ':'
         if label_match:
             label_name         = label_match.group(1)
             labels[label_name] = address
@@ -143,6 +165,21 @@ def resolve_labels(line: str, labels: dict) -> str: # replaces existing labels i
             label_address = labels[label]
             line = line.replace(label, f"0x{label_address:04x}") # 4 digit hex address
     return line
+
+def resolve_numerical_parameter(arg: str) -> int: # returns the integer form if the argument is an immediate value, returns -1 if not
+    integer = -1
+    if arg.startswith('#'):
+        integer = int(arg.replace('#', ''))
+    elif arg.startswith('0b'):
+        integer = int(arg, 2)
+    elif arg.startswith('0x'):
+        integer = int(arg, 16)
+    elif arg in ['RA', 'RB', 'RC', 'RD', 'SP', '[RCD]']:
+        pass
+    else:
+        raise ValueError(f"Unknown argument format: {arg}")
+        
+    return integer
 
 def assemble_instruction(line: list) -> list: # assembles a single instruction into bytecode
     tokens           = line.replace(',', ' ').split()
@@ -184,11 +221,11 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
             # value, R
             if arg1.startswith('R') and arg2.startswith('R'):
                 operands = f"{arg1},{arg2}"
-            elif arg1.startswith('R') and arg2.startswith('#'):
+            elif arg1.startswith('R') and resolve_numerical_parameter(arg2) >= 0:
                 operands = f"{arg1},#{{val}}"
-            elif arg1.startswith('R') and arg2.startswith('0x'):
+            elif arg1.startswith('R') and resolve_numerical_parameter(arg2) >= 0:
                 operands = f"{arg1},{{addr}}"
-            elif arg1.startswith('0x') and arg2.startswith('R'):
+            elif resolve_numerical_parameter(arg1) >= 0 and arg2.startswith('R'):
                 operands = f"{{addr}},{arg2}"
             elif arg1.startswith('R') and arg2 == '[RCD]':
                 operands = f"{arg1},[RCD]"
@@ -198,7 +235,7 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
                 operands = "SP,RCD"
             elif arg1 == 'RCD' and arg2 == 'SP':
                 operands = "RCD,SP"
-            elif arg1.startswith('#') and arg2.startswith('R'):
+            elif resolve_numerical_parameter(arg1) and arg2.startswith('R'):
                 operands = f"#{{val}},{arg2}"
             else:
                 raise ValueError(f"unknown operands: '{arg1}' and/or '{arg2}' in '{line}'")
@@ -212,11 +249,11 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
             # R, [address], R
             # address, R, R
             # [address], R, R
-            if arg1.startswith('R') and arg2.startswith('0x'):
+            if arg1.startswith('R') and resolve_numerical_parameter(arg2):
                 operands = f"{arg1},{{addr}},{arg3}"
             elif arg1.startswith('R') and arg2.startswith('['):
                 operands = f"{arg1},[{{addr}}],{arg3}"
-            elif arg1.startswith('0x'):
+            elif resolve_numerical_parameter(arg1):
                 operands = f"{{addr}},{arg2},{arg3}"
             elif arg1.startswith('['):
                 operands = f"[{{addr}}],{arg2},{arg3}"
@@ -237,8 +274,8 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
             return [opcode]
         case "imm8":
             for arg in instruction_args:
-                if arg.startswith('#'):
-                    imm8 = int(arg.replace('#', ''))
+                if resolve_numerical_parameter(arg) > -1:
+                    imm8 = resolve_numerical_parameter(arg)
                     if imm8 > 0xFF:
                         raise ValueError(f"#{{val}} exceeds 8-bits: {line}")
                     else:
@@ -246,8 +283,8 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
             return [opcode, imm8]
         case "addr16":
             for arg in instruction_args:
-                if arg.startswith('0x'):
-                    addr16 = int(arg, 0)
+                if resolve_numerical_parameter(arg) > -1:
+                    addr16 = resolve_numerical_parameter(arg)
                     if addr16 > 0xFFFF:
                         raise ValueError(f"{{addr}} exceeds 16-bits: {line}")
                     else:
@@ -259,11 +296,10 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
 def assemble(lines: list[str]) -> list[int]:
     all_lines       = process_included_file(lines)             # recursively combine all of the included files into one big ass list containing the file lines
     sanitized_lines = strip_comments_and_whitespace(all_lines) # basic sanitization, remove extra spaces and comments
-    
+
     # expand macros
     lines_no_macro_defs, macros = extract_macros(sanitized_lines)            # catalogs defined macros and removes their definitions from the source lines
     lines_expanded_macros       = expand_macros(lines_no_macro_defs, macros) # fully expand the macros
-
 
     # extract labels
     lines_no_label_defs, labels = extract_labels(lines_expanded_macros)

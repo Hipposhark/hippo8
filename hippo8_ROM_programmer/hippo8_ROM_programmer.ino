@@ -50,10 +50,34 @@ void set_AT28C256_address(int address, boolean is_output_enabled) {
   digitalWrite(SHIFT_LATCH, LOW);
 }
 
+void raw_write(int address, byte data) {
+  set_data_pins_mode(OUTPUT);
+  set_AT28C256_address(address, WRITE);
+
+  byte curr_data = data;
+  for (int pin = EEPROM_D7; pin >= EEPROM_D0; pin--) {
+    digitalWrite(pin, curr_data & 0x80);
+    curr_data = curr_data << 1;
+  }
+
+  digitalWrite(WRITE_ENABLE, LOW);
+  delayMicroseconds(20);
+  digitalWrite(WRITE_ENABLE, HIGH);
+  delay(20); // wait full write cycle (tWC in datasheet) (even if data isn't stored)
+}
+
+
+void enable_sdp_AT28C256() { // enable software data protection for at28c64b
+  raw_write(0x5555, 0xAA);
+  raw_write(0x2AAA, 0x55);
+  raw_write(0x5555, 0xA0);
+}
 
 void write_to_AT28C256(int address, byte data) {
   byte data_read = read_from_AT28C256(address);
   if (data_read != data) {
+    enable_sdp_AT28C256();
+
     set_data_pins_mode(OUTPUT);
     set_AT28C256_address(address, WRITE);
 
@@ -64,17 +88,42 @@ void write_to_AT28C256(int address, byte data) {
     }
 
     digitalWrite(WRITE_ENABLE, LOW);
-    delayMicroseconds(200);
+    delayMicroseconds(1);
     digitalWrite(WRITE_ENABLE, HIGH);
+    delayMicroseconds(1000);
+
+
+    // Immediately after write pulse
+    byte read_back;
+    unsigned long start_checking_time = millis();
+    unsigned long time_passed         = 0;
+    unsigned long curr_time;
+    int           time_spent_checking = 0;
+    
+    do {
+      read_back = read_from_AT28C256(address);
+
+      curr_time = millis();
+      time_spent_checking = (curr_time - start_checking_time) / 1000;
+      if (time_spent_checking > time_passed) {
+        time_passed = time_spent_checking;
+        Serial.print(".");
+      }
+
+    } while ((read_back & 0x80) != (data & 0x80));  // Polling bit 7
+
+    if (time_passed > 1) {
+      Serial.println("");
+    }
 
     // error checking
-    byte read_back = read_from_AT28C256(address);
+    // byte read_back = read_from_AT28C256(address);
 
-    if (read_back != data){
-      char buffer[80];
-      sprintf(buffer, "\r\nWRITE ERROR on 0x%04x! (want: %02x, read: %02x)\r\n", address, data, read_back);
-      Serial.println(buffer);
-    }
+    // if (read_back != data){
+    //   char buffer[80];
+    //   sprintf(buffer, "\r\nWRITE ERROR on 0x%04x! (want: %02x, read: %02x)\r\n", address, data, read_back);
+    //   Serial.println(buffer);
+    // }
   }
 }
 
@@ -117,45 +166,83 @@ const byte program_data[] PROGMEM = {
   /* 0x0000 */ 0x5c, 0x00, 0x02, 0x5d, 0x01, 0xdc, 0x03, 0x00, 0x5e, 0x01, 0xdd, 0x06, 0x00, 0xd6, 0x03, 0x00
 };
 
-
 void setup() {
   Serial.begin(57600);
   unsigned long start_time = millis();
 
-  // test reset vector
-
   init_ports();
   Serial.println("starting!");
-
-  write_to_AT28C256(0xFFFC & 8191, 0xE0);
-  write_to_AT28C256(0xFFFD & 8191, 0x00);
-
-  print_256_bytes_from_AT28C256(0xFEFF & 8191);
-
-
-  Serial.println("wrote to reset vector!");
-
-
-  int a = 0;
-  int i = 0;
-  while (i < sizeof(program_data)) {
-    byte bb = __LPM((uint16_t)(program_data + i));
-    i++;
-    write_to_AT28C256(a++, bb);
-    delay(1);
-  }
-
-  // write_to_AT28C256(0, 0x5c);
   print_256_bytes_from_AT28C256(0);
-  //
 
-  unsigned long end_time   = millis();
-  int           time_spent = (end_time - start_time) / 1000;
-  char          buf[80];
-  sprintf(buf, "took %d seconds", time_spent);
-  Serial.println(buf);
-  Serial.println("done.");
+  // write_to_AT28C256(0xFFFC & 8191, 0xFF); // little endian
+  // write_to_AT28C256(0xFFFD & 8191, 0xFF);
+
+  // write_to_AT28C256(0xFFFC & 8191, 0x00); // little endian
+  // write_to_AT28C256(0xFFFD & 8191, 0xE0);
+
+  // print_256_bytes_from_AT28C256(0xFEFF & 8191);
+
+  // Serial.println("wrote to reset vector!");
+
+  // int a = 0x0000;
+  // int i = 0;
+  // while (i < sizeof(program_data)) {
+  //   byte bb = __LPM((uint16_t)(program_data + i));
+    
+  //   //
+  //   char buf[80];
+  //   sprintf(buf, "%04x: %02x", a, bb);
+  //   Serial.println(buf);
+    
+  //   i++;
+
+  //   write_to_AT28C256(a++, bb);
+  //   delay(1);
+  // }
+  // delay(1);
+  // print_256_bytes_from_AT28C256(0);
+
 }
+
+
+// void setup() {
+//   Serial.begin(57600);
+//   unsigned long start_time = millis();
+
+//   // test reset vector
+
+//   init_ports();
+//   Serial.println("starting!");
+
+//   write_to_AT28C256(0xFFFC & 8191, 0x00); // little endian
+//   write_to_AT28C256(0xFFFD & 8191, 0xE0);
+
+//   print_256_bytes_from_AT28C256(0xFEFF & 8191);
+
+
+//   Serial.println("wrote to reset vector!");
+
+
+//   int a = 0;
+//   int i = 0;
+//   while (i < sizeof(program_data)) {
+//     byte bb = __LPM((uint16_t)(program_data + i));
+//     i++;
+//     write_to_AT28C256(a++, bb);
+//     delay(1);
+//   }
+
+//   // write_to_AT28C256(0, 0x5c);
+//   print_256_bytes_from_AT28C256(0);
+//   //
+
+//   unsigned long end_time   = millis();
+//   int           time_spent = (end_time - start_time) / 1000;
+//   char          buf[80];
+//   sprintf(buf, "took %d seconds", time_spent);
+//   Serial.println(buf);
+//   Serial.println("done.");
+// }
 
 void loop() {
   // put your main code here, to run repeatedly:
