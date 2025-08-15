@@ -1,20 +1,30 @@
 .include "macros.asm" ; include "macros.asm"
 
-MOV RA, #5
-CLC
+RESET:
+        MOV RA, #5
+        CLC
+
+LOOP:
+        JMP LOOPUP
 
 LOOPUP: 
-        OUT RA
+        JSR SUBROUTINE_TEST
         INC RA
         JNC LOOPUP
         CLC
         JMP LOOPDN
 
 LOOPDN: 
-        OUT RA
+        JSR SUBROUTINE_TEST
         DEC RA
         JNZ LOOPDN
         JMP LOOPUP
+
+SUBROUTINE_TEST:
+        OUT RA
+        RTS
+
+
 
 
 

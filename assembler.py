@@ -29,12 +29,13 @@ def get_instruction_to_opcode() -> dict: # converts and returns the serial outs 
 
         instruction_to_opcode[instruction] = {
             "opcode":     int(opcode, 0),
-            "operand_type": ["none", "imm8", "addr16"][num_params]
+            "operand_type": ["none", "imm8", "imm16"][num_params]
         }
 
     return instruction_to_opcode
 
-OPCODES = get_instruction_to_opcode()
+OPCODES           = get_instruction_to_opcode()
+RESERVED_KEYWORDS = set(opcode.split()[0] for opcode in OPCODES) | {'RA', 'RB', 'RC', 'RD', 'SP', 'RCD'} # can't use these keywords as user-defined names (eg. variables and label names)
 
 def process_included_file(lines: list[str], base_path=".") -> list[str]: # recursively adds included external files upon encountering '.include' keyword
     lines_with_included = []
@@ -58,6 +59,45 @@ def process_included_file(lines: list[str], base_path=".") -> list[str]: # recur
 def strip_comments_and_whitespace(lines: list[str]) -> list[str]: # removes comments, trailing whitespace, and empty lines
     return [line.split(';')[0].strip() for line in lines if line.strip() and not line.strip().startswith(';')]
 
+def evaluate_expression_with_variables(expression: str, variables: dict) -> str:
+    expression      = expression.replace('#', '')
+
+    local_namespace = {k: evaluate_expression_with_variables(v, variables) for k, v in variables.items() if k in expression}
+    try:
+        return str(eval(expression, {"__builtins__": {}}, local_namespace))
+    except Exception as e:
+        raise ValueError(f"Invalid expression '{expression}': {e}")
+
+def extract_variables(lines: list[str]) -> tuple: # catalogs variable declarations and removes them from the source lines
+    variables                      = {}
+    lines_no_variable_declarations = []
+
+    for line in lines:
+        variable_match = re.match(r"^\s*(\w+)\s*=\s*(.+)$", line) # checks for '=' syntax
+        if variable_match:
+            name  = variable_match.group(1)
+            value = variable_match.group(2).strip()
+
+            # check if the variable name we used is a reserved keyword
+            if name.upper() in RESERVED_KEYWORDS:
+                raise ValueError(f"variable name '{name}' conflicts with a reserved keyword.")
+            elif name in variables:
+                raise ValueError(f"variable name '{name}' is already in use somewhere!")
+            else:
+                evaluated_value = evaluate_expression_with_variables(value, variables)
+                variables[name] = evaluated_value
+        else:
+            lines_no_variable_declarations.append(line)
+    return lines_no_variable_declarations, variables
+    
+def substitute_variables(lines: list[str], variables: dict) -> list[str]: # returns the lines with variables substituted  
+    lines_substitued = []
+    for line in lines:
+        for name, value in variables.items():
+            line = re.sub(rf'\b{name}\b', value, line) # replaces the variable with its value
+        lines_substitued.append(line)
+    return lines_substitued
+
 def extract_macros(lines: list[str]) -> tuple: # catalogs defined macros and removes their definitions from the source lines
     macros              = {}
     lines_no_macro_defs = []
@@ -71,13 +111,17 @@ def extract_macros(lines: list[str]) -> tuple: # catalogs defined macros and rem
             tokens                   = line.split()
             macro_name, macro_params = tokens[1], tokens[2:]
             i += 1
-
-            # we travers through the macro and record its contents
-            macro_contents = []
-            while not lines[i].startswith(".endm"):
-                macro_contents.append(lines[i])
-                i += 1
-            macros[macro_name] = macro_params, macro_contents
+            
+            # check if macro name conflicts with any reserved keywords
+            if macro_name.upper() in RESERVED_KEYWORDS:
+                raise ValueError(f"macro name '{macro_name}' conflicts with a reserved keyword.")
+            else:
+                # we travers through the macro and record its contents
+                macro_contents = []
+                while not lines[i].startswith(".endm"):
+                    macro_contents.append(lines[i])
+                    i += 1
+                macros[macro_name] = macro_params, macro_contents
         else:
             lines_no_macro_defs.append(line)
         i += 1
@@ -117,42 +161,31 @@ def get_instruction_size(line: str) -> int: # returns the number of bytes the cu
     num_bytes = 1                                    # paramaterless instructions are only 1 byte long
     if '#' in line:                                  # detects imm8 parameter
         num_bytes = 2                                # instruction (1 byte) + imm8 (1 byte) = 2 bytes
-    elif re.search(r"\b0x[0-9a-fA-F]{1,4}\b", line): # detects addr16 parameter
-        num_bytes = 3                                # instruction (1 byte) + addr16 (2 bytes) =  3 bytes
-    # num_bytes = 1
-    # curr_instruction_mneomonic = line.split()[0]
-    # for instruction, instruction_details in OPCODES.items():
-    #     curr_operand_type                   = instruction_details["operand_type"]
-    #     instruction_mneomonic_being_checked = instruction.split()[0]
-    #     match curr_operand_type:
-    #         case "none":
-    #             if curr_instruction_mneomonic == instruction_mneomonic_being_checked:
-    #                 num_bytes = 1
-    #         case "imm8":
-    #             if curr_instruction_mneomonic == instruction_mneomonic_being_checked:
-    #                 num_bytes = 2
-    #         case "addr16":
-    #             if curr_instruction_mneomonic == instruction_mneomonic_being_checked:
-    #                 num_bytes = 3
+    elif re.search(r"\b0x[0-9a-fA-F]{1,4}\b", line): # detects imm16 parameter
+        num_bytes = 3                                # instruction (1 byte) + imm16 (2 bytes) =  3 bytes
     
     curr_instruction_mneomonic = line.split()[0]
     if curr_instruction_mneomonic[0] == 'J': # detects a jump instruction
         num_bytes = 3
 
-    print(f"line: {line} \t; {num_bytes}")
     return num_bytes
 
-BASE_ADDRESS = 0xE000 # the address where program data starts in memory
+BASE_ADDRESS = 0xE000 # the address where program data starts with respect to entire memory
 def extract_labels(lines: list) -> tuple: # catalogs and removes label definitions
     labels              = {}            # catalogs label definitions
     address             = BASE_ADDRESS  # tracks our position in memory
     lines_no_label_defs = []
     
     for line in lines:
-        label_match = re.match(r"(\w+):", line) # searches for ':'
+        label_match = re.match(r"(\.?[A-Za-z_]+):", line) # searches for ':'
         if label_match:
             label_name         = label_match.group(1)
-            labels[label_name] = address
+
+            # check if label name conflicts with a reserved keyword
+            if label_name.upper() in RESERVED_KEYWORDS:
+                raise ValueError(f"label name '{label_name}' conflicts with a reserved keyword.")
+            else:
+                labels[label_name] = address
         else:
             lines_no_label_defs.append(line)
             address += get_instruction_size(line)
@@ -163,17 +196,30 @@ def resolve_labels(line: str, labels: dict) -> str: # replaces existing labels i
     for label in labels:
         if label in line:
             label_address = labels[label]
-            line = line.replace(label, f"0x{label_address:04x}") # 4 digit hex address
+
+            label_pattern = rf"\b{re.escape(label)}\b" # replace exact label literal
+            line          = re.sub(label_pattern, f"0x{label_address:04x}", line) # 4 digit hex address
     return line
 
-def resolve_numerical_parameter(arg: str) -> int: # returns the integer form if the argument is an immediate value, returns -1 if not
+def evaluate_expression_with_no_variables(expression: str) -> str:
+    expression = expression.replace('#', '')
+    try:
+        return str(eval(expression, {"__builtins__": {}}))
+    except Exception as e:
+        raise ValueError(f"Invalid expression '{expression}': {e}")
+
+def get_resolved_operand_to_integer(arg: str) -> int: # returns the unsigned integer form if the argument is an immediate value, returns -1 if not
+    # eg. #5 -> 5, 
+
     integer = -1
     if arg.startswith('#'):
-        integer = int(arg.replace('#', ''))
-    elif arg.startswith('0b'):
-        integer = int(arg, 2)
+        arg     = evaluate_expression_with_no_variables(arg)
+        integer = int(arg.replace('#', ''), 0)
     elif arg.startswith('0x'):
-        integer = int(arg, 16)
+        arg     = evaluate_expression_with_no_variables(arg)
+        integer = int(arg, 0)
+    elif arg.startswith('['): # accounts for direct indexing and 
+        integer = int(arg.replace('[', '').replace(']', ''), 0)
     elif arg in ['RA', 'RB', 'RC', 'RD', 'SP', '[RCD]']:
         pass
     else:
@@ -186,6 +232,7 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
     instruction_name = tokens[0]
     instruction_args = tokens[1:]
 
+    # we parse the instruction and identify its operand types
     num_args = len(tokens) - 1
     match num_args:
         case 0:
@@ -194,15 +241,19 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
             arg     = instruction_args[0]
             operand = ''
 
+            # 1 operand combos:
             # R
             # address
             # [RCD]
             if arg.startswith('R'):
                 operand = arg
+            elif arg.startswith('['):
+                if arg == "[RCD]":
+                    operand = "[RCD]"
+                else:
+                    operand = "{addr}"
             elif arg.startswith('0x'):
                 operand = "{addr}"
-            elif arg == "[RCD]":
-                operand = "[RCD]"
             else:
                 raise ValueError(f"unknown operand: '{arg}' in '{line}'")
             instruction_key = f"{instruction_name} {operand}"
@@ -210,6 +261,7 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
             arg1, arg2 = instruction_args[0], instruction_args[1]
             operands   = ''
 
+            # 2 operand combos
             # R, R
             # R, value
             # R, address
@@ -219,24 +271,27 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
             # SP, RCD
             # RCD, SP
             # value, R
+            
+
             if arg1.startswith('R') and arg2.startswith('R'):
                 operands = f"{arg1},{arg2}"
-            elif arg1.startswith('R') and resolve_numerical_parameter(arg2) >= 0:
+            elif arg1.startswith('R') and arg2.startswith('#'):
                 operands = f"{arg1},#{{val}}"
-            elif arg1.startswith('R') and resolve_numerical_parameter(arg2) >= 0:
-                operands = f"{arg1},{{addr}}"
-            elif resolve_numerical_parameter(arg1) >= 0 and arg2.startswith('R'):
+            elif arg1.startswith('R') and arg2.startswith('['):
+                if arg2 == '[RCD]':
+                    operands = f"{arg1},[RCD]"
+                else:
+                    operands = f"{arg1},{{addr}}"
+            elif arg1.startswith('[') and arg2.startswith('R'):
                 operands = f"{{addr}},{arg2}"
-            elif arg1.startswith('R') and arg2 == '[RCD]':
-                operands = f"{arg1},[RCD]"
             elif arg1 == '[RCD]' and arg2.startswith('R'):
                 operands = f"[RCD],{arg2}"
             elif arg1 == 'SP' and arg2 == 'RCD':
                 operands = "SP,RCD"
             elif arg1 == 'RCD' and arg2 == 'SP':
                 operands = "RCD,SP"
-            elif resolve_numerical_parameter(arg1) and arg2.startswith('R'):
-                operands = f"#{{val}},{arg2}"
+            elif arg1.startswith('#') and arg2.startswith('R'):
+                operands = f"{{val}},{arg2}"
             else:
                 raise ValueError(f"unknown operands: '{arg1}' and/or '{arg2}' in '{line}'")
 
@@ -245,15 +300,16 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
             arg1, arg2, arg3 = instruction_args[0], instruction_args[1], instruction_args[2]
             operands = ''
 
+            # 3 operand combos:
             # R, address, R
             # R, [address], R
             # address, R, R
             # [address], R, R
-            if arg1.startswith('R') and resolve_numerical_parameter(arg2):
+            if arg1.startswith('R') and arg2.startswith('0x'):
                 operands = f"{arg1},{{addr}},{arg3}"
             elif arg1.startswith('R') and arg2.startswith('['):
                 operands = f"{arg1},[{{addr}}],{arg3}"
-            elif resolve_numerical_parameter(arg1):
+            elif arg1.startswith('0x'):
                 operands = f"{{addr}},{arg2},{arg3}"
             elif arg1.startswith('['):
                 operands = f"[{{addr}}],{arg2},{arg3}"
@@ -264,50 +320,63 @@ def assemble_instruction(line: list) -> list: # assembles a single instruction i
         case _:
             raise ValueError(f"unknown instruction format: {line}")
     
+    # we index the instruction into our catalog of instructions to retrieve its related information
     instruction = OPCODES.get(instruction_key)
     if not instruction:
         raise ValueError(f"unknown instruction: {instruction_key}")
 
+    # we convert the assembly tokenized instruction into its corresponding bytearray representation
     opcode, operand_type = instruction["opcode"], instruction["operand_type"]
+    bytecode             = []
     match operand_type:
         case "none":
-            return [opcode]
+            bytecode = [opcode]
         case "imm8":
             for arg in instruction_args:
-                if resolve_numerical_parameter(arg) > -1:
-                    imm8 = resolve_numerical_parameter(arg)
+                if get_resolved_operand_to_integer(arg) > -1:
+                    imm8 = get_resolved_operand_to_integer(arg)
                     if imm8 > 0xFF:
                         raise ValueError(f"#{{val}} exceeds 8-bits: {line}")
                     else:
                         break
-            return [opcode, imm8]
-        case "addr16":
+            bytecode = [opcode, imm8]
+        case "imm16":
             for arg in instruction_args:
-                if resolve_numerical_parameter(arg) > -1:
-                    addr16 = resolve_numerical_parameter(arg)
-                    if addr16 > 0xFFFF:
+                if get_resolved_operand_to_integer(arg) > -1:
+                    imm16 = get_resolved_operand_to_integer(arg)
+                    if imm16 > 0xFFFF:
                         raise ValueError(f"{{addr}} exceeds 16-bits: {line}")
                     else:
                         break
-            return [opcode, addr16 & 0xFF, (addr16 >> 8) & 0xFF]
+            bytecode = [opcode, imm16 & 0xFF, (imm16 >> 8) & 0xFF]
         case _:
             raise ValueError(f"unknown instruction: {line}")
+    
+    # print(f"{tokens} \t-> {bytecode}")
+
+    return bytecode
 
 def assemble(lines: list[str]) -> list[int]:
     all_lines       = process_included_file(lines)             # recursively combine all of the included files into one big ass list containing the file lines
     sanitized_lines = strip_comments_and_whitespace(all_lines) # basic sanitization, remove extra spaces and comments
 
+    # substitute variables
+    lines_no_vars, variables = extract_variables(sanitized_lines)
+    lines_subbed_vars        = substitute_variables(lines_no_vars, variables)
+
     # expand macros
-    lines_no_macro_defs, macros = extract_macros(sanitized_lines)            # catalogs defined macros and removes their definitions from the source lines
+    lines_no_macro_defs, macros = extract_macros(lines_subbed_vars)            # catalogs defined macros and removes their definitions from the source lines
     lines_expanded_macros       = expand_macros(lines_no_macro_defs, macros) # fully expand the macros
 
     # extract labels
     lines_no_label_defs, labels = extract_labels(lines_expanded_macros)
+    print(labels)
 
     # resolve labels and convert assembly instructions into bytecode
     bytecode = []
     for line in lines_no_label_defs:
         resolved_line = resolve_labels(line, labels)
+        # print(resolved_line)
         bytecode.extend(assemble_instruction(resolved_line))
     return bytecode
 
@@ -345,7 +414,7 @@ def main() -> None:
         with open(f"{file_name}.hex", "w") as out:
             for line in bytecode_formatted:
                 out.write(line)
-        print("completed! assembled to out.hex")
+        print(f"completed! assembled to '{file_name}.hex'")
         for line in bytecode_formatted:
             print(line)
 

@@ -1,4 +1,5 @@
 ; assembler macros
+
 .macro THISISATESTMACRO
     NOP
     HLT
@@ -11,3 +12,4 @@
 .macro DEC RX
     SUB RX, #1
 .endm
+

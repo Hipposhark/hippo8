@@ -31,7 +31,7 @@ datasheet links
 #define CHIP_DISABLE false // for SST39SF040 chip enable
 
 // ROM chip reference definitions
-#define CURR_ROM_NUM    2 // 0, 1, 2, 3
+#define CURR_ROM_NUM    0 // 0, 1, 2, 3
 #define FIRST_LABEL_ROM 4 // 4, 5
 #define IS_LABEL_ROM (CURR_ROM_NUM >= FIRST_LABEL_ROM) 
 #define IS_MCODE_ROM !IS_LABEL_ROM
@@ -47,7 +47,7 @@ datasheet links
 #define _PCC ((uint32_t)1 << 4) // program counter count
 #define _SPE ((uint32_t)1 << 3) // stack pointer enable
 #define _SPW 1                  // stack pointer write
-#define _SPD ((uint32_t)1 << 1) // stack pointer direction/decrement (0 = up, 1 = down)
+#define _SPD ((uint32_t)1 << 1) // stack pointer direction/decrement (0 = up, 1 = down), note: requires 2 clock cycles to count since spd must be set when system clock is high
 #define _SPC ((uint32_t)1 << 2) // stack pointer count
 
 // microcode ROM 1 Control Lines
@@ -57,7 +57,7 @@ datasheet links
 #define _MMW ((uint32_t)1 << 12) // memory write
 #define _CIC ((uint32_t)1 << 11) // control instruction cycle
 #define _CIL ((uint32_t)1 << 8)  // control instruction load
-#define _CTI ((uint32_t)1 << 9)  // control toggle interrupt
+#define _CTI ((uint32_t)1 << 9)  // control toggles interrupt inhibit
 #define _PSW ((uint32_t)1 << 10) // port selector write
 
 // microcode ROM 2 Control Lines
@@ -669,7 +669,7 @@ void setup() {
   // initialize registers to zero
   write_microcode_byte(curr_mc_address++, _ALU_x00 | _REW);                                       // (18) write x00   to E reg.
   write_microcode_byte(curr_mc_address++, _REE | _TLW | _TUW | _RAW | _RBW | _RCW | _RDW | _OTW); // (19) write x0000 to transfer reg. and x00 to regs. A, B, C, D, and O
-  write_microcode_byte(curr_mc_address++, _SPW | _TRE);                                           // (20) write x0000 to stack pointer
+  write_microcode_byte(curr_mc_address++, _SPW | _TRE | _SPD);                                    // (20) write x0000 to stack pointer
   write_microcode_byte(curr_mc_address++, _SPD | _SPC);                                           // (21) count down once so stack pointer contains xFFFF
   write_microcode_byte(curr_mc_address++, _REE | _FLG_BUS | _RFW | _CIC);                         // (22) clears flags register to x0
   // now we fall to fetch code (_CIC is set)
@@ -685,9 +685,10 @@ void setup() {
   3) Set Interrupt Inhibit Flag
   4) Load Program Counter with address from 0xFFFE / 0xFFFF
   */
+
   interrupt_address = curr_mc_address;
    /*TODO: understand interrupt code*/
-
+  
 
 
   /*||===========================||*/
@@ -1142,8 +1143,13 @@ void setup() {
   // PSF: Push Flags onto Stack
   print_curr_instruction("PSF", curr_instruction_opcode);
   write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
+  // write_microcode_byte(curr_mc_address++, _RFE | _SPE | _MMW); // F reg. -> [SP]
+  // write_microcode_byte(curr_mc_address++, _SPC | _SPD | _CIC);        // decrement SP
+  
+
   write_microcode_byte(curr_mc_address++, _RFE | _SPE | _MMW | _SPD); // F reg. -> [SP]
   write_microcode_byte(curr_mc_address++, _SPC | _SPD | _CIC);        // decrement SP
+
 
   // PPF: Pop Flags off of Stack
   print_curr_instruction("PPF", curr_instruction_opcode);
@@ -1161,8 +1167,8 @@ void setup() {
   if (IS_LABEL_ROM) {
     int ALL_FLAGS = _F_C | _F_Z | _F_N | _F_V | _F_II | _F_IR | _F_IF;
     for (int curr_flag_combo = 0; curr_flag_combo <= ALL_FLAGS; curr_flag_combo++) {
-      boolean IS_NEGATIVE_AND_INTERRUPT_INHIBIT_CLEAR = (curr_flag_combo & (_F_N | _F_II)) == 0;
-      if (IS_NEGATIVE_AND_INTERRUPT_INHIBIT_CLEAR) {                                                                            // checks if neither the negative flag nor interrupt inhibit flag is set
+      boolean IS_NEGATIVE_AND_INTERRUPT_INHIBIT_USED = (curr_flag_combo & (_F_N | _F_II)) == 0;
+      if (IS_NEGATIVE_AND_INTERRUPT_INHIBIT_USED) {                                                                             // checks if neither the negative flag nor interrupt inhibit flag is set
         write_label_byte(curr_flag_combo               , IS_PREDEFINED_LABEL, predefined_label_1, no_toggle_interrupt_address); // if both  clear, don't toggle interrupt -> II now clear
         write_label_byte(curr_flag_combo | _F_N        , IS_PREDEFINED_LABEL, predefined_label_1, toggle_interrupt_address);    // if only N  set, toggle interrupt       -> II now set
         write_label_byte(curr_flag_combo | _F_II       , IS_PREDEFINED_LABEL, predefined_label_1, toggle_interrupt_address);    // if only II set, toggle interrupt       -> II now clear
@@ -1170,6 +1176,7 @@ void setup() {
       }
     }
   }
+
   write_microcode_byte(curr_mc_address++, _SPE | _MME | _FLG_BUS | _RFW | _CIC); // pop flags from stack and write into F reg.
 
 
@@ -1214,7 +1221,7 @@ void setup() {
   write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
   write_microcode_byte(curr_mc_address++, _PCE | _MME | _TLW | _PCC);
   write_microcode_byte(curr_mc_address++, _PCE | _MME | _TUW | _PCC);
-  write_microcode_byte(curr_mc_address++, _PCL | _SPE | _MMW | _SPD);        // first push low  byte onto stack
+  write_microcode_byte(curr_mc_address++, _PCL | _SPE | _MMW | _SPD);        // first push low byte onto stack
   write_microcode_byte(curr_mc_address++, _SPC | _SPD);
   write_microcode_byte(curr_mc_address++, _PCU | _SPE | _MMW | _SPD);        // then  push high byte onto stack
   write_microcode_byte(curr_mc_address++, _TRE | _PCW | _SPC | _SPD | _CIC); // imm16 -> PC, decrement SP
@@ -1279,7 +1286,7 @@ void setup() {
   write_label_unconditional(IS_OPCODE, curr_instruction_opcode++, curr_mc_address);
   write_microcode_byte(curr_mc_address++, _RCE | _TLW);
   write_microcode_byte(curr_mc_address++, _RDE | _TUW);
-  write_microcode_byte(curr_mc_address++, _PCL | _SPE | _MMW | _SPD);        // first push low  byte onto stack
+  write_microcode_byte(curr_mc_address++, _PCL | _SPE | _MMW | _SPD);        // first push low byte onto stack
   write_microcode_byte(curr_mc_address++, _SPC | _SPD);
   write_microcode_byte(curr_mc_address++, _PCU | _SPE | _MMW | _SPD);        // then  push high byte onto stack
   write_microcode_byte(curr_mc_address++, _TRE | _PCW | _SPC | _SPD | _CIC); // imm16 -> PC, decrement SP
