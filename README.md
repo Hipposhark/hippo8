@@ -1,4 +1,13 @@
 # hippo8
-a custom 8-bit cisc breadboard computer built with discrete CMOS and TTL chips and components.
+The hippo8 is a custom 8-bit cisc breadboard computer built from scratch with discrete CMOS and TTL chips and components.
+I also wrote a custom assembler to assemble the assembly code into the custom instruction set in binary.
 
 ![Full](https://github.com/Hipposhark/hippo8/blob/main/images/hippo8.jpg?raw=true)
+
+# Acknowledgements
+This project all started in 2021 when I discovered [Ben Eater's](https://github.com/beneater) 8-bit computer series on YouTube, so many thanks to him for starting it all.
+
+Also I must give credit to [DerULF1](https://github.com/DerULF1) for his incredible 8-bit computer build, of which my build is nearly a clone schematically. Much of the hippo8's hardware is based on his build, so many thanks as I practically studied his [YouTube series](https://youtube.com/playlist?list=PL5-Ar_CvItgaP27eT_C7MnCiubkyaEqF0&si=xrgBiyPQprl_dDX3) religiously.
+
+# Computer Architecture
+...
